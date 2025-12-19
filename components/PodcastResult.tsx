@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Play, Download, FileText, Music, AlertCircle, Mic2, UserCircle2, Maximize2, X } from 'lucide-react';
-import { SpeakerSegment } from '../types';
+import { Download, FileText, Music, AlertCircle, Mic2, UserCircle2, Disc3, X } from 'lucide-react';
+import { SpeakerSegment, PodcastResult as PodcastResultType } from '../types';
+import MusicPlayer from './MusicPlayer';
 
 interface PodcastResultProps {
   title: string;
@@ -8,12 +9,13 @@ interface PodcastResultProps {
   audioUrl?: string;
   timeline?: SpeakerSegment[];
   guestName?: string;
+  id?: string;
 }
 
-const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, timeline, guestName }) => {
+const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, timeline, guestName, id }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentSpeaker, setCurrentSpeaker] = useState<'Host' | 'Guest' | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showPlayer, setShowPlayer] = useState(false);
 
   // Auto-play when audioUrl changes (e.g., when selecting from history)
   useEffect(() => {
@@ -102,96 +104,46 @@ const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, 
     .animate-gentle-bounce {
       animation: gentle-bounce 0.5s infinite ease-in-out;
     }
+    
+    @keyframes spin-avatar {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .animate-spin-avatar {
+      animation: spin-avatar 3s linear infinite;
+    }
   `;
 
-  const toggleFullscreen = () => {
-      setIsFullscreen(!isFullscreen);
+  // 构建当前播客数据用于 MusicPlayer
+  const currentPodcast: PodcastResultType = {
+    id: id || 'current',
+    timestamp: Date.now(),
+    title,
+    script,
+    audioUrl,
+    timeline,
+    guestName
   };
 
-  const FullscreenOverlay = () => (
-      <div className="fixed inset-0 z-50 bg-slate-900 flex flex-col items-center justify-center overflow-hidden">
-          <button 
-              onClick={toggleFullscreen}
-              className="absolute top-8 right-8 p-3 bg-white/10 rounded-full hover:bg-white/20 text-white transition-all z-50"
-          >
-              <X className="w-8 h-8" />
-          </button>
-          
-          <div className="flex items-center justify-center space-x-12 md:space-x-48 w-full h-full relative">
-              {/* Dynamic Background */}
-              <div className={`absolute inset-0 transition-opacity duration-500 ${currentSpeaker ? 'opacity-30' : 'opacity-5'}`}>
-                  <div className={`absolute top-0 left-0 w-full h-full bg-gradient-to-br ${currentSpeaker === 'Host' ? 'from-pink-600/40' : 'from-transparent'} to-transparent`} />
-                  <div className={`absolute top-0 right-0 w-full h-full bg-gradient-to-bl ${currentSpeaker === 'Guest' ? 'from-blue-600/40' : 'from-transparent'} to-transparent`} />
-              </div>
-
-              {/* Host - Fullscreen */}
-              <div className={`flex flex-col items-center transition-all duration-300 ${currentSpeaker === 'Host' ? 'scale-125 z-20' : 'scale-90 opacity-40 grayscale'}`}>
-                   <div className={`relative ${currentSpeaker === 'Host' ? 'animate-crazy-dance' : ''}`}>
-                        <div className="w-48 h-48 md:w-80 md:h-80 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 p-2 shadow-[0_0_60px_rgba(236,72,153,0.6)]">
-                            <div className="w-full h-full rounded-full bg-slate-800 flex items-center justify-center overflow-hidden border-8 border-slate-900">
-                                <Mic2 className="w-24 h-24 md:w-40 md:h-40 text-pink-400" />
-                            </div>
-                        </div>
-                   </div>
-                   <span className="mt-8 text-2xl md:text-4xl font-black tracking-widest text-pink-500 drop-shadow-lg">HOST</span>
-              </div>
-
-              {/* Guest - Fullscreen */}
-              <div className={`flex flex-col items-center transition-all duration-300 ${currentSpeaker === 'Guest' ? 'scale-125 z-20' : 'scale-90 opacity-40 grayscale'}`}>
-                   <div className={`relative ${currentSpeaker === 'Guest' ? 'animate-crazy-dance' : ''}`}>
-                        <div className="w-48 h-48 md:w-80 md:h-80 rounded-full bg-gradient-to-br from-blue-500 to-cyan-600 p-2 shadow-[0_0_60px_rgba(59,130,246,0.6)]">
-                            <div className="w-full h-full rounded-full bg-slate-800 flex items-center justify-center overflow-hidden border-8 border-slate-900 bg-white">
-                                {guestName && guestName !== 'Guest' ? (
-                                    <img 
-                                        src={`/image/${encodeURIComponent(guestName)}.gif`} 
-                                        alt={guestName}
-                                        className="w-full h-full object-cover"
-                                        onError={(e) => {
-                                            console.warn(`Failed to load image: ${e.currentTarget.src}`);
-                                            e.currentTarget.style.display = 'none';
-                                            e.currentTarget.parentElement?.classList.remove('bg-white');
-                                            // Show fallback
-                                            const parent = e.currentTarget.parentElement;
-                                            if (parent && !parent.querySelector('.fallback-icon')) {
-                                                const fallback = document.createElement('div');
-                                                fallback.className = "fallback-icon flex items-center justify-center w-full h-full";
-                                                fallback.innerHTML = '<svg class="w-12 h-12 text-blue-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/></svg>';
-                                                parent.appendChild(fallback);
-                                            }
-                                        }}
-                                    />
-                                ) : (
-                                    <UserCircle2 className="w-24 h-24 md:w-40 md:h-40 text-blue-400" />
-                                )}
-                            </div>
-                        </div>
-                   </div>
-                   <span className="mt-8 text-2xl md:text-4xl font-black tracking-widest text-blue-500 drop-shadow-lg">
-                       {guestName || 'GUEST'}
-                   </span>
-              </div>
-          </div>
-          
-          {/* Controls in Fullscreen */}
-          <div className="absolute bottom-12 w-full max-w-2xl px-8">
-               <div className="bg-black/40 backdrop-blur-md rounded-2xl p-6 border border-white/10">
-                   <h3 className="text-white text-center text-xl font-bold mb-4 opacity-80">{title}</h3>
-                   {/* Simplified controls just to verify play state visually */}
-                   <div className="flex justify-center">
-                        <span className="text-white/50 text-sm">
-                            {currentSpeaker ? `Speaking: ${currentSpeaker === 'Host' ? 'HOST' : guestName || 'GUEST'}` : 'Paused / Listening...'}
-                        </span>
-                   </div>
-               </div>
-          </div>
+  const PlayerModal = () => (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="relative w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-3xl">
+        <button 
+          onClick={() => setShowPlayer(false)}
+          className="absolute top-4 right-4 z-50 p-2 bg-white/10 rounded-full hover:bg-white/20 text-white transition-all"
+        >
+          <X className="w-6 h-6" />
+        </button>
+        <MusicPlayer history={[currentPodcast]} initialId={currentPodcast.id} />
       </div>
+    </div>
   );
 
   return (
     <div className="space-y-6 animate-fade-in-up">
       <style>{animationStyles}</style>
       
-      {isFullscreen && <FullscreenOverlay />}
+      {showPlayer && <PlayerModal />}
 
       <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-xl overflow-hidden">
         {/* Header */}
@@ -200,13 +152,15 @@ const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, 
             <Music className="mr-3 text-pink-400" />
             {title}
           </h2>
-          <button 
-             onClick={toggleFullscreen}
-             className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg transition-all text-sm font-medium border border-white/10"
-          >
-             <Maximize2 className="w-4 h-4" />
-             <span>Immersive Mode</span>
-          </button>
+          {audioUrl && (
+            <button 
+               onClick={() => setShowPlayer(true)}
+               className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-red-500 hover:from-pink-400 hover:to-red-400 text-white flex items-center justify-center transition-all hover:scale-110 shadow-lg shadow-pink-500/30"
+               title="打开播放器"
+            >
+               <Disc3 className="w-5 h-5 animate-spin" style={{ animationDuration: '3s' }} />
+            </button>
+          )}
         </div>
 
         {/* Visualizer & Audio Player */}
@@ -214,7 +168,7 @@ const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, 
           
           {/* Visual Stage (Standard) */}
           {audioUrl && (
-              <div className="flex justify-center items-end space-x-8 md:space-x-24 h-64 bg-slate-900/80 rounded-lg p-8 mb-6 border border-slate-700/50 relative overflow-hidden shadow-inner cursor-pointer" onClick={toggleFullscreen}>
+              <div className="flex justify-center items-end space-x-8 md:space-x-24 h-64 bg-slate-900/80 rounded-lg p-8 mb-6 border border-slate-700/50 relative overflow-hidden shadow-inner">
                   {/* Spotlight Effect */}
                   <div className="absolute top-0 left-1/4 w-32 h-32 bg-pink-500/10 blur-[50px] rounded-full pointer-events-none" />
                   <div className="absolute top-0 right-1/4 w-32 h-32 bg-blue-500/10 blur-[50px] rounded-full pointer-events-none" />
@@ -242,7 +196,7 @@ const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, 
                                     <img 
                                         src={`/image/${encodeURIComponent(guestName)}.gif`} 
                                         alt={guestName}
-                                        className="w-full h-full object-cover"
+                                        className={`w-full h-full object-cover rounded-full ${currentSpeaker === 'Guest' ? 'animate-spin-avatar' : ''}`}
                                         onError={(e) => {
                                             console.warn(`Failed to load image: ${e.currentTarget.src}`);
                                             e.currentTarget.style.display = 'none';
