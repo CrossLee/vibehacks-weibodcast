@@ -2,6 +2,10 @@
 
 ```
 vibehacks-weibodcast/
+├── src/
+│   ├── App.jsx            # 主组件
+│   ├── main.jsx           # 入口
+│   └── index.css          # 样式
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py
@@ -12,15 +16,10 @@ vibehacks-weibodcast/
 │   │   └── minimax.py     # MiniMax 语音服务
 │   ├── requirements.txt
 │   └── .env.example
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx        # 主组件
-│   │   ├── main.jsx       # 入口
-│   │   └── index.css      # 样式
-│   ├── index.html
-│   ├── package.json
-│   └── vite.config.js
-└── .kiro/steering/        # AI 指导文档
+├── index.html
+├── package.json
+├── vite.config.js
+└── .kiro/steering/
 ```
 
 ## 模块职责
