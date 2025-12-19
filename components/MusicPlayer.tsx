@@ -17,9 +17,10 @@ interface MusicPlayerProps {
   history: PodcastResult[];
   initialId?: string;
   onClose?: () => void;
+  autoPlay?: boolean;
 }
 
-const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose }) => {
+const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, autoPlay = false }) => {
   const [currentIndex, setCurrentIndex] = useState(() => {
     const idx = history.findIndex(item => item.id === initialId);
     return idx >= 0 ? idx : 0;
@@ -27,8 +28,27 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose }
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const hasAutoPlayed = useRef(false);
 
   const currentPodcast = history[currentIndex];
+
+  // 自动播放
+  useEffect(() => {
+    if (autoPlay && !hasAutoPlayed.current && audioRef.current && currentPodcast?.audioUrl) {
+      hasAutoPlayed.current = true;
+      // 延迟一点确保 audio 元素已准备好
+      setTimeout(() => {
+        if (audioRef.current) {
+          audioRef.current.play().then(() => {
+            setIsPlaying(true);
+          }).catch((e) => {
+            console.log('Auto-play failed:', e);
+            setIsPlaying(false);
+          });
+        }
+      }, 100);
+    }
+  }, [autoPlay, currentPodcast?.audioUrl]);
 
   useEffect(() => {
     if (audioRef.current && currentPodcast?.audioUrl) {
@@ -82,7 +102,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose }
   }
 
   return (
-    <div className="relative h-[700px] bg-slate-900 rounded-3xl overflow-hidden border border-slate-700 shadow-2xl flex flex-col md:flex-row animate-fade-in">
+    <div className="relative h-[600px] bg-slate-900 rounded-3xl overflow-hidden border border-slate-700 shadow-2xl flex flex-col md:flex-row animate-fade-in">
       {/* Background Blur Effect */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-30">
         <div className="absolute top-[-20%] left-[-20%] w-[80%] h-[80%] rounded-full bg-pink-600/30 blur-[120px] animate-pulse" />
@@ -149,17 +169,17 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose }
 
       {/* Main Content: Player Disc */} 
       <div className="flex-1 flex flex-col z-10 relative"> 
-        <div className="flex-1 flex flex-col items-center justify-center p-12 text-center"> 
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center"> 
           {/* Rotating Disc Container */} 
           <div className="relative group"> 
-            <div className={`relative w-64 h-64 md:w-80 md:h-80 rounded-full border-[12px] border-slate-800 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden transition-transform duration-700 
+            <div className={`relative w-48 h-48 md:w-56 md:h-56 rounded-full border-[10px] border-slate-800 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden transition-transform duration-700 
               ${isPlaying ? 'animate-[spin_10s_linear_infinite]' : ''} 
             `}> 
               {/* Vinyl Texture */} 
               <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.05)_0%,rgba(0,0,0,0.8)_100%)] z-10" /> 
               <div className="absolute inset-0 flex items-center justify-center"> 
-                <div className="w-32 h-32 md:w-40 md:h-40 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shadow-inner relative overflow-hidden"> 
-                   <Disc className="w-20 h-20 md:w-24 md:h-24 text-white/20 absolute" /> 
+                <div className="w-24 h-24 md:w-28 md:h-28 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shadow-inner relative overflow-hidden"> 
+                   <Disc className="w-14 h-14 md:w-16 md:h-16 text-white/20 absolute" /> 
                    <div className="text-white font-bold text-xl md:text-2xl z-10 px-4 drop-shadow-md"> 
                       {currentPodcast.title.charAt(0)} 
                    </div> 
@@ -181,7 +201,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose }
             </div> 
           </div> 
 
-          <div className="mt-12 space-y-2"> 
+          <div className="mt-6 space-y-1"> 
             <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight leading-tight"> 
               {currentPodcast.title} 
             </h1> 
@@ -192,7 +212,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose }
         </div> 
 
         {/* Controls Area */} 
-        <div className="p-8 bg-slate-900/60 backdrop-blur-xl border-t border-slate-700/50 space-y-6"> 
+        <div className="p-4 bg-slate-900/60 backdrop-blur-xl border-t border-slate-700/50 space-y-4"> 
           {/* Progress Bar */} 
           <div className="space-y-2"> 
              <input 

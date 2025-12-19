@@ -126,15 +126,15 @@ const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, 
   };
 
   const PlayerModal = () => (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="relative w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-3xl">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+      <div className="relative w-full max-w-6xl my-auto">
         <button 
           onClick={() => setShowPlayer(false)}
-          className="absolute top-4 right-4 z-50 p-2 bg-white/10 rounded-full hover:bg-white/20 text-white transition-all"
+          className="absolute -top-2 -right-2 z-50 p-2 bg-red-500 rounded-full hover:bg-red-400 text-white transition-all shadow-lg"
         >
           <X className="w-6 h-6" />
         </button>
-        <MusicPlayer history={[currentPodcast]} initialId={currentPodcast.id} />
+        <MusicPlayer history={[currentPodcast]} initialId={currentPodcast.id} autoPlay />
       </div>
     </div>
   );
@@ -154,7 +154,13 @@ const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, 
           </h2>
           {audioUrl && (
             <button 
-               onClick={() => setShowPlayer(true)}
+               onClick={() => {
+                 // 暂停原来的播放
+                 if (audioRef.current) {
+                   audioRef.current.pause();
+                 }
+                 setShowPlayer(true);
+               }}
                className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-red-500 hover:from-pink-400 hover:to-red-400 text-white flex items-center justify-center transition-all hover:scale-110 shadow-lg shadow-pink-500/30"
                title="打开播放器"
             >
