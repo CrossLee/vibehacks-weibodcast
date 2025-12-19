@@ -1,29 +1,38 @@
 # Technology Stack
 
-## Status
+## 后端
+- Python 3.11+
+- FastAPI - Web框架
+- WebSocket - 实时日志推送
+- httpx - HTTP客户端
 
-Tech stack not yet established. This document should be updated once the project's technology choices are made.
+## 前端
+- React 18
+- Vite - 构建工具
 
-## Recommendations
+## 外部服务
+- 百炼 (DashScope) - qwen-max 模型生成播客脚本
+- MiniMax - 语音克隆 + TTS
+- 微博 API - 内容抓取
 
-When setting up this project, consider documenting:
-- Minimax for voice clone
-- Minimax for TTS
-- Bailian Qianwen model for podcast script generation
-- React for web
-- WeiboSpider for podcast script source content
-
-## Common Commands
+## 常用命令
 
 ```bash
-# Add commands here as the project develops
-# Example structure:
-# npm install    - Install dependencies
-# npm run dev    - Start development server
-# npm run build  - Build for production
-# npm test       - Run tests
+# 后端
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+# 前端
+cd frontend
+npm install
+npm run dev
 ```
 
-## Dependencies
+## 环境变量
 
-To be documented once package.json, requirements.txt, or equivalent is added.
+复制 `backend/.env.example` 为 `backend/.env` 并填写：
+- DASHSCOPE_API_KEY
+- MINIMAX_API_KEY
+- MINIMAX_GROUP_ID
+- WEIBO_COOKIE

@@ -2,14 +2,19 @@
 
 ## Project: Vibehacks Weibodcast
 
-一款方便用户将微博关注的博主的微博内容转换成双人播客，并且嘉宾使用博主的原声发声的播客制作工具。
+微博播客生成器 - 将微博博主的内容自动转换为双人播客节目。
 
-## Status
+## 核心功能
 
-This is a newly initialized repository. The product scope and features are yet to be defined.
+1. 输入微博用户ID，抓取最近10条微博
+2. 使用百炼智能体生成主持人/嘉宾双人播客脚本
+3. 上传音色样本，通过MiniMax克隆嘉宾音色
+4. 生成完整播客音频并自动播放
+5. 实时显示执行日志
 
-## Notes for AI Assistant
+## 用户流程
 
-- This project is in early stages - help establish good foundations
-- When adding features, suggest appropriate project structure
-- Recommend best practices for the chosen tech stack once established
+1. 输入微博用户ID
+2. 上传嘉宾音色样本（MP3/WAV）
+3. 点击生成
+4. 查看日志、收听播客、查看脚本
