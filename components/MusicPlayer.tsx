@@ -20,7 +20,10 @@ import {
   Mic,
   Square,
   Share2,
-  Download
+  Download,
+  Bluetooth,
+  BluetoothConnected,
+  Check
 } from 'lucide-react';
 
 interface DancerState { 
@@ -73,6 +76,15 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   const [sharePodcastDuration, setSharePodcastDuration] = useState(0);
   const [shareVoiceProgress, setShareVoiceProgress] = useState(0);
   const [shareVoiceCurrentTime, setShareVoiceCurrentTime] = useState(0);
+  // 蓝牙眼镜状态
+  const [isGlassesConnected, setIsGlassesConnected] = useState(false);
+  const [showGlassesModal, setShowGlassesModal] = useState(false);
+  const [glassesRecording, setGlassesRecording] = useState(true);
+  const [glassesAudioTime, setGlassesAudioTime] = useState(0);
+  const [glassesWaveform, setGlassesWaveform] = useState<number[]>(new Array(12).fill(0));
+  const [glassesRecordingDuration, setGlassesRecordingDuration] = useState(0);
+  const glassesWaveformRef = useRef<number | null>(null);
+  const glassesTimerRef = useRef<number | null>(null);
   const shareAudioRef = useRef<HTMLAudioElement | null>(null);
   const shareVoiceRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -572,6 +584,99 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     }
   };
 
+  // 蓝牙眼镜连接
+  const handleGlassesConnect = () => {
+    if (!isGlassesConnected) {
+      // 模拟连接
+      setIsGlassesConnected(true);
+    }
+    // 暂停播客播放
+    if (audioRef.current) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+      setGlassesAudioTime(audioRef.current.currentTime);
+    }
+    // 打开眼镜弹窗
+    setShowGlassesModal(true);
+    setGlassesRecording(true);
+    setGlassesRecordingDuration(0);
+    // 开始模拟波形动画
+    startGlassesWaveform();
+    // 开始计时
+    glassesTimerRef.current = window.setInterval(() => {
+      setGlassesRecordingDuration(prev => prev + 1);
+    }, 1000);
+  };
+
+  // 模拟眼镜波形动画
+  const startGlassesWaveform = () => {
+    const animate = () => {
+      setGlassesWaveform(prev => 
+        prev.map(() => Math.random() * 0.8 + 0.2)
+      );
+      glassesWaveformRef.current = window.setTimeout(animate, 100);
+    };
+    animate();
+  };
+
+  // 眼镜端完成录音
+  const handleGlassesFinish = () => {
+    setGlassesRecording(false);
+    // 停止波形动画
+    if (glassesWaveformRef.current) {
+      clearTimeout(glassesWaveformRef.current);
+    }
+    // 停止计时
+    if (glassesTimerRef.current) {
+      clearInterval(glassesTimerRef.current);
+    }
+    // 创建一条眼镜端的互动记录
+    if (currentPodcast) {
+      const note: InterruptNote = {
+        id: `glasses-${Date.now()}`,
+        podcastId: currentPodcast.id,
+        podcastTitle: currentPodcast.title,
+        timestamp: Date.now(),
+        audioTime: glassesAudioTime,
+        content: `👓 智能眼镜语音留言 (${glassesRecordingDuration}秒)`,
+        type: 'voice',
+        voiceDuration: glassesRecordingDuration
+      };
+      setLocalInterruptNotes(prev => [note, ...prev]);
+      setSidebarTab('interaction');
+    }
+    // 关闭弹窗
+    setTimeout(() => {
+      setShowGlassesModal(false);
+      setGlassesWaveform(new Array(12).fill(0));
+    }, 500);
+  };
+
+  // 关闭眼镜弹窗
+  const handleCloseGlassesModal = () => {
+    setShowGlassesModal(false);
+    setGlassesRecording(false);
+    if (glassesWaveformRef.current) {
+      clearTimeout(glassesWaveformRef.current);
+    }
+    if (glassesTimerRef.current) {
+      clearInterval(glassesTimerRef.current);
+    }
+    setGlassesWaveform(new Array(12).fill(0));
+  };
+
+  // 清理眼镜相关资源
+  useEffect(() => {
+    return () => {
+      if (glassesWaveformRef.current) {
+        clearTimeout(glassesWaveformRef.current);
+      }
+      if (glassesTimerRef.current) {
+        clearInterval(glassesTimerRef.current);
+      }
+    };
+  }, []);
+
   // 关闭语音气泡
   const handleCloseVoiceBubble = () => {
     if (isRecording && mediaRecorderRef.current) {
@@ -961,6 +1066,120 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     </div>
   );
 
+  // 智能眼镜弹窗组件
+  const GlassesModal = () => (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md animate-fade-in">
+      <div className="relative w-[700px]">
+        {/* 关闭按钮 */}
+        <button
+          onClick={handleCloseGlassesModal}
+          className="absolute -top-12 right-0 text-slate-400 hover:text-white transition-colors p-2 z-10"
+        >
+          <X className="w-6 h-6" />
+        </button>
+
+        {/* 连接状态提示 */}
+        <div className="absolute -top-12 left-0 flex items-center space-x-2 text-green-400">
+          <BluetoothConnected className="w-5 h-5" />
+          <span className="text-sm font-medium">智能眼镜已连接</span>
+        </div>
+
+        {/* 眼镜主体 */}
+        <div className="relative">
+          {/* 眼镜框架 SVG */}
+          <svg viewBox="0 0 700 200" className="w-full">
+            {/* 左镜片 */}
+            <ellipse cx="175" cy="100" rx="140" ry="80" fill="#1e293b" stroke="#475569" strokeWidth="8" />
+            {/* 右镜片 */}
+            <ellipse cx="525" cy="100" rx="140" ry="80" fill="#1e293b" stroke="#475569" strokeWidth="8" />
+            {/* 鼻梁 */}
+            <path d="M 315 100 Q 350 130 385 100" fill="none" stroke="#475569" strokeWidth="8" strokeLinecap="round" />
+            {/* 左镜腿 */}
+            <path d="M 35 100 L -20 80" fill="none" stroke="#475569" strokeWidth="8" strokeLinecap="round" />
+            {/* 右镜腿 */}
+            <path d="M 665 100 L 720 80" fill="none" stroke="#475569" strokeWidth="8" strokeLinecap="round" />
+          </svg>
+
+          {/* 左镜片内容 - 语音波形 */}
+          <div className="absolute left-[35px] top-[20px] w-[280px] h-[160px] flex items-center justify-center">
+            <div className="flex items-center space-x-2">
+              {/* 波形显示 */}
+              <div className="flex items-center space-x-1 h-16">
+                {glassesWaveform.map((level, i) => (
+                  <div
+                    key={i}
+                    className="w-2 bg-gradient-to-t from-cyan-500 to-blue-400 rounded-full transition-all duration-100"
+                    style={{ 
+                      height: `${glassesRecording ? level * 48 : 8}px`,
+                      opacity: glassesRecording ? 1 : 0.3
+                    }}
+                  />
+                ))}
+              </div>
+              
+              {/* 完成按钮 */}
+              {glassesRecording && (
+                <button
+                  onClick={handleGlassesFinish}
+                  className="ml-4 w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center hover:scale-110 transition-transform shadow-lg"
+                  title="说完了"
+                >
+                  <Check className="w-5 h-5 text-white" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 右镜片内容 - 播客信息 */}
+          <div className="absolute right-[35px] top-[20px] w-[280px] h-[160px] flex items-center justify-center">
+            <div className="text-center px-4">
+              <div className="w-12 h-12 mx-auto rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center mb-2 overflow-hidden">
+                {currentPodcast?.guestName && currentPodcast.guestName !== 'Guest' ? (
+                  <img
+                    src={`/image/${encodeURIComponent(currentPodcast.guestName)}.gif`}
+                    alt={currentPodcast.guestName}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <Music2 className="w-6 h-6 text-white/60" />
+                )}
+              </div>
+              <p className="text-white text-xs font-medium truncate">{currentPodcast?.title}</p>
+              <p className="text-slate-400 text-[10px] mt-1">暂停于 {formatTime(glassesAudioTime)}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* 录音状态 */}
+        <div className="mt-6 text-center">
+          {glassesRecording ? (
+            <div className="flex items-center justify-center space-x-3">
+              <span className="inline-block w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+              <span className="text-white font-mono text-xl">
+                {Math.floor(glassesRecordingDuration / 60).toString().padStart(2, '0')}:
+                {(glassesRecordingDuration % 60).toString().padStart(2, '0')}
+              </span>
+              <span className="text-slate-400 text-sm">正在录音...</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center space-x-2 text-green-400">
+              <Check className="w-5 h-5" />
+              <span>录音已保存</span>
+            </div>
+          )}
+        </div>
+
+        {/* 提示文字 */}
+        <p className="text-center text-slate-500 text-sm mt-4">
+          👓 通过智能眼镜记录你的想法，点击左镜片的 ✓ 按钮完成录音
+        </p>
+      </div>
+    </div>
+  );
+
   if (!currentPodcast) {
     return (
       <div className="flex flex-col items-center justify-center h-[600px] text-slate-500 bg-slate-900/50 rounded-2xl border border-slate-700/50 border-dashed">
@@ -974,6 +1193,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     <>
     {showDanceParty && <DancePartyOverlay />}
     {showShareCard && <ShareCard />}
+    {showGlassesModal && <GlassesModal />}
     <div className="relative h-[600px] bg-slate-900 rounded-3xl overflow-hidden border border-slate-700 shadow-2xl flex flex-col md:flex-row animate-fade-in">
       {/* Background Blur Effect */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-30">
@@ -1229,166 +1449,120 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
               </button> 
             </div> 
 
-            {/* 打断并对话按钮 */}
-            <div className="relative">
-              <button
-                onClick={handleInterrupt}
-                className="flex items-center space-x-2 px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full hover:from-purple-400 hover:to-pink-400 transition-all shadow-lg hover:shadow-purple-500/30 text-sm font-medium"
-              >
-                <MessageSquarePlus className="w-4 h-4" />
-                <span>对话</span>
-              </button>
+            {/* 打断并对话 + 智能眼镜按钮 */}
+            <div className="flex items-center space-x-2">
+              {/* 打断并语音按钮 */}
+              <div className="relative">
+                <button
+                  onClick={handleVoiceInterrupt}
+                  className="flex items-center space-x-2 px-3 py-2 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-full hover:from-orange-400 hover:to-red-400 transition-all shadow-lg hover:shadow-orange-500/30 text-sm font-medium"
+                >
+                  <Mic className="w-4 h-4" />
+                  <span>打断并对话</span>
+                </button>
 
-              {/* 文字气泡弹窗 */}
-              {showInterruptBubble && (
-                <div className="absolute bottom-full right-0 mb-3 w-80 bg-slate-800 rounded-2xl shadow-2xl border border-slate-600 overflow-hidden z-50 animate-fade-in">
-                  {/* 气泡箭头 */}
-                  <div className="absolute -bottom-2 right-8 w-4 h-4 bg-slate-800 border-r border-b border-slate-600 transform rotate-45" />
-                  
-                  {/* 引用播客样式 */}
-                  <div className="p-4 bg-slate-700/50 border-b border-slate-600">
-                    <div className="flex items-start space-x-3">
-                      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shrink-0">
-                        {currentPodcast?.guestName && currentPodcast.guestName !== 'Guest' ? (
-                          <img 
-                            src={`/image/${encodeURIComponent(currentPodcast.guestName)}.gif`}
-                            alt={currentPodcast.guestName}
-                            className="w-full h-full object-cover rounded-lg"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
+                {/* 语音气泡弹窗 */}
+                {showVoiceBubble && (
+                  <div className="absolute bottom-full right-0 mb-3 w-80 bg-slate-800 rounded-2xl shadow-2xl border border-slate-600 overflow-hidden z-50 animate-fade-in">
+                    {/* 气泡箭头 */}
+                    <div className="absolute -bottom-2 right-8 w-4 h-4 bg-slate-800 border-r border-b border-slate-600 transform rotate-45" />
+                    
+                    {/* 引用播客样式 */}
+                    <div className="p-4 bg-slate-700/50 border-b border-slate-600">
+                      <div className="flex items-start space-x-3">
+                        <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shrink-0">
+                          {currentPodcast?.guestName && currentPodcast.guestName !== 'Guest' ? (
+                            <img 
+                              src={`/image/${encodeURIComponent(currentPodcast.guestName)}.gif`}
+                              alt={currentPodcast.guestName}
+                              className="w-full h-full object-cover rounded-lg"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <Music2 className="w-6 h-6 text-white/60" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-medium text-sm truncate">{currentPodcast?.title}</p>
+                          <div className="flex items-center text-xs text-slate-400 mt-1">
+                            <Clock className="w-3 h-3 mr-1" />
+                            <span>暂停于 {formatTime(voiceAudioTime)}</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleCloseVoiceBubble}
+                          className="text-slate-400 hover:text-white transition-colors p-1"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 录音区域 */}
+                    <div className="p-4">
+                      {/* 波形图 */}
+                      <div className="flex items-center justify-center h-16 bg-slate-900/50 rounded-xl mb-4 px-2">
+                        {audioLevels.map((level, i) => (
+                          <div
+                            key={i}
+                            className="w-1.5 mx-0.5 bg-gradient-to-t from-orange-500 to-red-400 rounded-full transition-all duration-75"
+                            style={{ 
+                              height: `${Math.max(4, level * 48)}px`,
+                              opacity: isRecording ? 1 : 0.3
                             }}
                           />
-                        ) : (
-                          <Music2 className="w-6 h-6 text-white/60" />
+                        ))}
+                      </div>
+                      
+                      {/* 录音时长 */}
+                      <div className="text-center mb-4">
+                        <span className="text-2xl font-mono text-white">
+                          {Math.floor(recordingDuration / 60).toString().padStart(2, '0')}:
+                          {(recordingDuration % 60).toString().padStart(2, '0')}
+                        </span>
+                        {isRecording && (
+                          <span className="ml-2 inline-block w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium text-sm truncate">{currentPodcast?.title}</p>
-                        <div className="flex items-center text-xs text-slate-400 mt-1">
-                          <Clock className="w-3 h-3 mr-1" />
-                          <span>暂停于 {formatTime(interruptAudioTime)}</span>
-                        </div>
-                      </div>
+                      
+                      {/* 完成按钮 */}
                       <button
-                        onClick={handleCloseBubble}
-                        className="text-slate-400 hover:text-white transition-colors p-1"
+                        onClick={stopRecordingAndSave}
+                        disabled={recordingDuration < 1}
+                        className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl hover:from-orange-400 hover:to-red-400 transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <X className="w-4 h-4" />
+                        <Square className="w-4 h-4" />
+                        <span>我说完了</span>
                       </button>
                     </div>
                   </div>
+                )}
+              </div>
 
-                  {/* 输入区域 */}
-                  <div className="p-4">
-                    <textarea
-                      value={interruptContent}
-                      onChange={(e) => setInterruptContent(e.target.value)}
-                      placeholder="写下你的想法..."
-                      className="w-full h-24 bg-slate-900/50 border border-slate-600 rounded-xl p-3 text-white text-sm placeholder-slate-500 resize-none focus:outline-none focus:border-pink-500 transition-colors"
-                    />
-                    <div className="flex justify-end mt-3">
-                      <button
-                        onClick={handleSaveInterrupt}
-                        disabled={!interruptContent.trim()}
-                        className="flex items-center space-x-2 px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-400 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Save className="w-4 h-4" />
-                        <span>保存</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 打断并语音按钮 */}
-            <div className="relative">
+              {/* 蓝牙眼镜连接按钮 */}
               <button
-                onClick={handleVoiceInterrupt}
-                className="flex items-center space-x-2 px-3 py-2 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-full hover:from-orange-400 hover:to-red-400 transition-all shadow-lg hover:shadow-orange-500/30 text-sm font-medium"
+                onClick={handleGlassesConnect}
+                className={`flex items-center space-x-2 px-3 py-2 rounded-full transition-all text-sm font-medium ${
+                  isGlassesConnected
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/30'
+                    : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 border border-slate-600'
+                }`}
               >
-                <Mic className="w-4 h-4" />
-                <span>语音</span>
+                {isGlassesConnected ? (
+                  <>
+                    <BluetoothConnected className="w-4 h-4" />
+                    <span>眼镜已连接</span>
+                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                  </>
+                ) : (
+                  <>
+                    <Bluetooth className="w-4 h-4" />
+                    <span>连接 AI 眼镜</span>
+                  </>
+                )}
               </button>
-
-              {/* 语音气泡弹窗 */}
-              {showVoiceBubble && (
-                <div className="absolute bottom-full right-0 mb-3 w-80 bg-slate-800 rounded-2xl shadow-2xl border border-slate-600 overflow-hidden z-50 animate-fade-in">
-                  {/* 气泡箭头 */}
-                  <div className="absolute -bottom-2 right-8 w-4 h-4 bg-slate-800 border-r border-b border-slate-600 transform rotate-45" />
-                  
-                  {/* 引用播客样式 */}
-                  <div className="p-4 bg-slate-700/50 border-b border-slate-600">
-                    <div className="flex items-start space-x-3">
-                      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shrink-0">
-                        {currentPodcast?.guestName && currentPodcast.guestName !== 'Guest' ? (
-                          <img 
-                            src={`/image/${encodeURIComponent(currentPodcast.guestName)}.gif`}
-                            alt={currentPodcast.guestName}
-                            className="w-full h-full object-cover rounded-lg"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <Music2 className="w-6 h-6 text-white/60" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium text-sm truncate">{currentPodcast?.title}</p>
-                        <div className="flex items-center text-xs text-slate-400 mt-1">
-                          <Clock className="w-3 h-3 mr-1" />
-                          <span>暂停于 {formatTime(voiceAudioTime)}</span>
-                        </div>
-                      </div>
-                      <button
-                        onClick={handleCloseVoiceBubble}
-                        className="text-slate-400 hover:text-white transition-colors p-1"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 录音区域 */}
-                  <div className="p-4">
-                    {/* 波形图 */}
-                    <div className="flex items-center justify-center h-16 bg-slate-900/50 rounded-xl mb-4 px-2">
-                      {audioLevels.map((level, i) => (
-                        <div
-                          key={i}
-                          className="w-1.5 mx-0.5 bg-gradient-to-t from-orange-500 to-red-400 rounded-full transition-all duration-75"
-                          style={{ 
-                            height: `${Math.max(4, level * 48)}px`,
-                            opacity: isRecording ? 1 : 0.3
-                          }}
-                        />
-                      ))}
-                    </div>
-                    
-                    {/* 录音时长 */}
-                    <div className="text-center mb-4">
-                      <span className="text-2xl font-mono text-white">
-                        {Math.floor(recordingDuration / 60).toString().padStart(2, '0')}:
-                        {(recordingDuration % 60).toString().padStart(2, '0')}
-                      </span>
-                      {isRecording && (
-                        <span className="ml-2 inline-block w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                      )}
-                    </div>
-                    
-                    {/* 完成按钮 */}
-                    <button
-                      onClick={stopRecordingAndSave}
-                      disabled={recordingDuration < 1}
-                      className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl hover:from-orange-400 hover:to-red-400 transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Square className="w-4 h-4" />
-                      <span>我说完了</span>
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="hidden md:flex items-center space-x-4"> 
