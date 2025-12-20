@@ -54,4 +54,7 @@ export interface InterruptNote {
   timestamp: number;
   audioTime: number;
   content: string;
+  type: 'text' | 'voice';
+  voiceUrl?: string;
+  voiceDuration?: number;
 }

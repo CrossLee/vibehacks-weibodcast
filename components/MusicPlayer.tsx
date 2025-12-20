@@ -16,7 +16,9 @@ import {
   Save,
   Clock,
   MessageCircle,
-  Trash2
+  Trash2,
+  Mic,
+  Square
 } from 'lucide-react';
 
 interface DancerState { 
@@ -51,6 +53,20 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   const [sidebarTab, setSidebarTab] = useState<'playlist' | 'interaction'>('playlist');
   // 本地管理 interruptNotes 状态
   const [localInterruptNotes, setLocalInterruptNotes] = useState<InterruptNote[]>([]);
+  // 语音录制状态
+  const [showVoiceBubble, setShowVoiceBubble] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceAudioTime, setVoiceAudioTime] = useState(0);
+  const [audioLevels, setAudioLevels] = useState<number[]>(new Array(20).fill(0));
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [playingNoteId, setPlayingNoteId] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const recordingTimerRef = useRef<number | null>(null);
+  const noteAudioRef = useRef<HTMLAudioElement | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const hasAutoPlayed = useRef(false);
   const animationRef = useRef<number | null>(null);
@@ -270,7 +286,8 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
       podcastTitle: currentPodcast.title,
       timestamp: Date.now(),
       audioTime: interruptAudioTime,
-      content: interruptContent.trim()
+      content: interruptContent.trim(),
+      type: 'text'
     };
     
     // 直接更新本地状态
@@ -285,6 +302,178 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   const handleDeleteNote = (noteId: string) => {
     setLocalInterruptNotes(prev => prev.filter(note => note.id !== noteId));
   };
+
+  // 打断并语音
+  const handleVoiceInterrupt = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+      setVoiceAudioTime(audioRef.current.currentTime);
+      setShowVoiceBubble(true);
+      setRecordingDuration(0);
+      startRecording();
+    }
+  };
+
+  // 开始录音
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // 创建音频分析器
+      audioContextRef.current = new AudioContext();
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      source.connect(analyserRef.current);
+      analyserRef.current.fftSize = 64;
+      
+      // 开始录音
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      
+      mediaRecorderRef.current.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+      
+      mediaRecorderRef.current.start(100);
+      setIsRecording(true);
+      
+      // 开始计时
+      recordingTimerRef.current = window.setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+      
+      // 开始波形动画
+      updateAudioLevels();
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+      alert('无法访问麦克风，请检查权限设置');
+      setShowVoiceBubble(false);
+    }
+  };
+
+  // 更新音频波形
+  const updateAudioLevels = () => {
+    if (!analyserRef.current) return;
+    
+    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+    analyserRef.current.getByteFrequencyData(dataArray);
+    
+    // 取20个采样点
+    const levels = [];
+    const step = Math.floor(dataArray.length / 20);
+    for (let i = 0; i < 20; i++) {
+      levels.push(dataArray[i * step] / 255);
+    }
+    setAudioLevels(levels);
+    
+    if (isRecording) {
+      animationFrameRef.current = requestAnimationFrame(updateAudioLevels);
+    }
+  };
+
+  // 停止录音并保存
+  const stopRecordingAndSave = () => {
+    if (!mediaRecorderRef.current || !currentPodcast) return;
+    
+    mediaRecorderRef.current.stop();
+    setIsRecording(false);
+    
+    // 停止计时
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+    }
+    
+    // 停止波形动画
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    
+    // 关闭音频流
+    mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+    
+    // 等待数据收集完成
+    setTimeout(() => {
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      const voiceUrl = URL.createObjectURL(audioBlob);
+      
+      const note: InterruptNote = {
+        id: `voice-${Date.now()}`,
+        podcastId: currentPodcast.id,
+        podcastTitle: currentPodcast.title,
+        timestamp: Date.now(),
+        audioTime: voiceAudioTime,
+        content: `语音留言 (${recordingDuration}秒)`,
+        type: 'voice',
+        voiceUrl,
+        voiceDuration: recordingDuration
+      };
+      
+      setLocalInterruptNotes(prev => [note, ...prev]);
+      setShowVoiceBubble(false);
+      setSidebarTab('interaction');
+      setAudioLevels(new Array(20).fill(0));
+    }, 100);
+  };
+
+  // 关闭语音气泡
+  const handleCloseVoiceBubble = () => {
+    if (isRecording && mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+    }
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+    }
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    setIsRecording(false);
+    setShowVoiceBubble(false);
+    setAudioLevels(new Array(20).fill(0));
+  };
+
+  // 播放语音笔记
+  const playVoiceNote = (note: InterruptNote) => {
+    if (!note.voiceUrl) return;
+    
+    if (playingNoteId === note.id) {
+      // 停止播放
+      if (noteAudioRef.current) {
+        noteAudioRef.current.pause();
+        noteAudioRef.current = null;
+      }
+      setPlayingNoteId(null);
+    } else {
+      // 停止之前的播放
+      if (noteAudioRef.current) {
+        noteAudioRef.current.pause();
+      }
+      
+      // 开始新的播放
+      noteAudioRef.current = new Audio(note.voiceUrl);
+      noteAudioRef.current.onended = () => setPlayingNoteId(null);
+      noteAudioRef.current.play();
+      setPlayingNoteId(note.id);
+    }
+  };
+
+  // 清理录音资源
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (noteAudioRef.current) {
+        noteAudioRef.current.pause();
+      }
+    };
+  }, []);
 
   // 关闭气泡
   const handleCloseBubble = () => {
@@ -542,7 +731,12 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-purple-400 font-medium truncate">{note.podcastTitle}</p>
+                      <div className="flex items-center space-x-2">
+                        <p className="text-xs text-purple-400 font-medium truncate">{note.podcastTitle}</p>
+                        {note.type === 'voice' && (
+                          <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 text-[10px] rounded">语音</span>
+                        )}
+                      </div>
                       <div className="flex items-center text-[10px] text-slate-500 mt-1">
                         <Clock className="w-3 h-3 mr-1" />
                         <span>{formatTime(note.audioTime)}</span>
@@ -557,7 +751,26 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                  <p className="text-sm text-slate-300 mt-2 line-clamp-3">{note.content}</p>
+                  {note.type === 'voice' ? (
+                    <button
+                      onClick={() => playVoiceNote(note)}
+                      className="mt-2 w-full flex items-center justify-center space-x-2 px-3 py-2 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors"
+                    >
+                      {playingNoteId === note.id ? (
+                        <>
+                          <Pause className="w-4 h-4 text-orange-400" />
+                          <span className="text-sm text-orange-400">停止播放</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 text-slate-300" />
+                          <span className="text-sm text-slate-300">播放语音 ({note.voiceDuration}秒)</span>
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <p className="text-sm text-slate-300 mt-2 line-clamp-3">{note.content}</p>
+                  )}
                 </div>
               ))
             )
@@ -671,13 +884,13 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
             <div className="relative">
               <button
                 onClick={handleInterrupt}
-                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full hover:from-purple-400 hover:to-pink-400 transition-all shadow-lg hover:shadow-purple-500/30 text-sm font-medium"
+                className="flex items-center space-x-2 px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full hover:from-purple-400 hover:to-pink-400 transition-all shadow-lg hover:shadow-purple-500/30 text-sm font-medium"
               >
                 <MessageSquarePlus className="w-4 h-4" />
-                <span>打断并对话</span>
+                <span>对话</span>
               </button>
 
-              {/* 气泡弹窗 */}
+              {/* 文字气泡弹窗 */}
               {showInterruptBubble && (
                 <div className="absolute bottom-full right-0 mb-3 w-80 bg-slate-800 rounded-2xl shadow-2xl border border-slate-600 overflow-hidden z-50 animate-fade-in">
                   {/* 气泡箭头 */}
@@ -734,6 +947,96 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
                         <span>保存</span>
                       </button>
                     </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 打断并语音按钮 */}
+            <div className="relative">
+              <button
+                onClick={handleVoiceInterrupt}
+                className="flex items-center space-x-2 px-3 py-2 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-full hover:from-orange-400 hover:to-red-400 transition-all shadow-lg hover:shadow-orange-500/30 text-sm font-medium"
+              >
+                <Mic className="w-4 h-4" />
+                <span>语音</span>
+              </button>
+
+              {/* 语音气泡弹窗 */}
+              {showVoiceBubble && (
+                <div className="absolute bottom-full right-0 mb-3 w-80 bg-slate-800 rounded-2xl shadow-2xl border border-slate-600 overflow-hidden z-50 animate-fade-in">
+                  {/* 气泡箭头 */}
+                  <div className="absolute -bottom-2 right-8 w-4 h-4 bg-slate-800 border-r border-b border-slate-600 transform rotate-45" />
+                  
+                  {/* 引用播客样式 */}
+                  <div className="p-4 bg-slate-700/50 border-b border-slate-600">
+                    <div className="flex items-start space-x-3">
+                      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shrink-0">
+                        {currentPodcast?.guestName && currentPodcast.guestName !== 'Guest' ? (
+                          <img 
+                            src={`/image/${encodeURIComponent(currentPodcast.guestName)}.gif`}
+                            alt={currentPodcast.guestName}
+                            className="w-full h-full object-cover rounded-lg"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <Music2 className="w-6 h-6 text-white/60" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-medium text-sm truncate">{currentPodcast?.title}</p>
+                        <div className="flex items-center text-xs text-slate-400 mt-1">
+                          <Clock className="w-3 h-3 mr-1" />
+                          <span>暂停于 {formatTime(voiceAudioTime)}</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleCloseVoiceBubble}
+                        className="text-slate-400 hover:text-white transition-colors p-1"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 录音区域 */}
+                  <div className="p-4">
+                    {/* 波形图 */}
+                    <div className="flex items-center justify-center h-16 bg-slate-900/50 rounded-xl mb-4 px-2">
+                      {audioLevels.map((level, i) => (
+                        <div
+                          key={i}
+                          className="w-1.5 mx-0.5 bg-gradient-to-t from-orange-500 to-red-400 rounded-full transition-all duration-75"
+                          style={{ 
+                            height: `${Math.max(4, level * 48)}px`,
+                            opacity: isRecording ? 1 : 0.3
+                          }}
+                        />
+                      ))}
+                    </div>
+                    
+                    {/* 录音时长 */}
+                    <div className="text-center mb-4">
+                      <span className="text-2xl font-mono text-white">
+                        {Math.floor(recordingDuration / 60).toString().padStart(2, '0')}:
+                        {(recordingDuration % 60).toString().padStart(2, '0')}
+                      </span>
+                      {isRecording && (
+                        <span className="ml-2 inline-block w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                      )}
+                    </div>
+                    
+                    {/* 完成按钮 */}
+                    <button
+                      onClick={stopRecordingAndSave}
+                      disabled={recordingDuration < 1}
+                      className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl hover:from-orange-400 hover:to-red-400 transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Square className="w-4 h-4" />
+                      <span>我说完了</span>
+                    </button>
                   </div>
                 </div>
               )}
