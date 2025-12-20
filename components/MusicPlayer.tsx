@@ -26,6 +26,23 @@ import {
   Check
 } from 'lucide-react';
 
+// SpeechRecognition 类型声明
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: ((this: SpeechRecognition, ev: Event) => void) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => void) | null;
+  start(): void;
+  stop(): void;
+}
+
 interface DancerState { 
   id: number; 
   x: number;
@@ -83,8 +100,14 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   const [glassesAudioTime, setGlassesAudioTime] = useState(0);
   const [glassesWaveform, setGlassesWaveform] = useState<number[]>(new Array(12).fill(0));
   const [glassesRecordingDuration, setGlassesRecordingDuration] = useState(0);
+  const [glassesTranscript, setGlassesTranscript] = useState('');
+  const [glassesShowHighlight, setGlassesShowHighlight] = useState(false);
+  const [glassesRecognitionState, setGlassesRecognitionState] = useState('待命');
   const glassesWaveformRef = useRef<number | null>(null);
   const glassesTimerRef = useRef<number | null>(null);
+  const glassesMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const glassesAudioChunksRef = useRef<Blob[]>([]);
+  const glassesRecognitionRef = useRef<SpeechRecognition | null>(null);
   const shareAudioRef = useRef<HTMLAudioElement | null>(null);
   const shareVoiceRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -585,7 +608,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   };
 
   // 蓝牙眼镜连接
-  const handleGlassesConnect = () => {
+  const handleGlassesConnect = async () => {
     if (!isGlassesConnected) {
       // 模拟连接
       setIsGlassesConnected(true);
@@ -600,12 +623,117 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     setShowGlassesModal(true);
     setGlassesRecording(true);
     setGlassesRecordingDuration(0);
+    setGlassesTranscript('');
+    setGlassesShowHighlight(false);
+    setGlassesRecognitionState('待命');
     // 开始模拟波形动画
     startGlassesWaveform();
     // 开始计时
     glassesTimerRef.current = window.setInterval(() => {
       setGlassesRecordingDuration(prev => prev + 1);
     }, 1000);
+
+    // 开始实际录音
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      glassesMediaRecorderRef.current = new MediaRecorder(stream);
+      glassesAudioChunksRef.current = [];
+
+      glassesMediaRecorderRef.current.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          glassesAudioChunksRef.current.push(e.data);
+        }
+      };
+
+      glassesMediaRecorderRef.current.start(100);
+      
+      // 开始语音识别
+      startGlassesSpeechRecognition();
+    } catch (err) {
+      console.error('Failed to start glasses recording:', err);
+    }
+  };
+
+  // 开始眼镜语音识别
+  const startGlassesSpeechRecognition = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.log('Speech recognition not supported');
+      return;
+    }
+
+    glassesRecognitionRef.current = new SpeechRecognition();
+    glassesRecognitionRef.current.continuous = true;
+    glassesRecognitionRef.current.interimResults = true;
+    glassesRecognitionRef.current.lang = 'zh-CN';
+
+    glassesRecognitionRef.current.onstart = () => {
+      setGlassesRecognitionState('正在聆听...');
+    };
+
+    glassesRecognitionRef.current.onresult = (event: any) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          const finalText = event.results[i][0].transcript;
+          handleGlassesFinalTranscript(finalText);
+        } else {
+          interim += event.results[i][0].transcript;
+        }
+      }
+      if (interim) {
+        setGlassesTranscript(interim);
+        setGlassesRecognitionState('识别中...');
+      }
+    };
+
+    glassesRecognitionRef.current.onend = () => {
+      // 如果还在录音，重新开始识别
+      if (glassesRecording) {
+        glassesRecognitionRef.current?.start();
+      }
+    };
+
+    glassesRecognitionRef.current.start();
+  };
+
+  // 处理眼镜语音识别最终结果
+  const handleGlassesFinalTranscript = (text: string) => {
+    if (!text || text.trim().length === 0) return;
+
+    console.log('Glasses transcript:', text);
+    setGlassesTranscript(text);
+    setGlassesRecognitionState('意图确认');
+
+    // 检测关键词
+    const isHighlight =
+      text.includes('很有道理') ||
+      text.includes('有道理') ||
+      text.includes('说得对') ||
+      text.includes('道理');
+    console.log('Is highlight:', isHighlight);
+    if (isHighlight) {
+      console.log('Setting glassesShowHighlight to true');
+      setGlassesShowHighlight(true);
+      // 5秒后隐藏高亮
+      setTimeout(() => {
+        setGlassesShowHighlight(false);
+      }, 5000);
+    }
+
+    setTimeout(() => {
+      setGlassesRecognitionState('正在聆听...');
+    }, 1000);
+  };
+
+  // 手动触发高亮效果（用于测试）
+  const triggerGlassesHighlight = () => {
+    console.log('Manual trigger highlight');
+    setGlassesShowHighlight(true);
+    setGlassesTranscript('很有道理');
+    setTimeout(() => {
+      setGlassesShowHighlight(false);
+    }, 5000);
   };
 
   // 模拟眼镜波形动画
@@ -630,26 +758,60 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     if (glassesTimerRef.current) {
       clearInterval(glassesTimerRef.current);
     }
-    // 创建一条眼镜端的互动记录
-    if (currentPodcast) {
-      const note: InterruptNote = {
-        id: `glasses-${Date.now()}`,
-        podcastId: currentPodcast.id,
-        podcastTitle: currentPodcast.title,
-        timestamp: Date.now(),
-        audioTime: glassesAudioTime,
-        content: `👓 智能眼镜语音留言 (${glassesRecordingDuration}秒)`,
-        type: 'voice',
-        voiceDuration: glassesRecordingDuration
-      };
-      setLocalInterruptNotes(prev => [note, ...prev]);
-      setSidebarTab('interaction');
+    
+    // 停止录音并保存
+    if (glassesMediaRecorderRef.current) {
+      glassesMediaRecorderRef.current.stop();
+      glassesMediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      
+      // 等待数据收集完成
+      setTimeout(() => {
+        const audioBlob = new Blob(glassesAudioChunksRef.current, { type: 'audio/webm' });
+        const voiceUrl = URL.createObjectURL(audioBlob);
+        
+        // 创建一条眼镜端的互动记录
+        if (currentPodcast) {
+          const note: InterruptNote = {
+            id: `glasses-${Date.now()}`,
+            podcastId: currentPodcast.id,
+            podcastTitle: currentPodcast.title,
+            timestamp: Date.now(),
+            audioTime: glassesAudioTime,
+            content: `👓 智能眼镜语音留言 (${glassesRecordingDuration}秒)`,
+            type: 'voice',
+            voiceUrl,
+            voiceDuration: glassesRecordingDuration
+          };
+          setLocalInterruptNotes(prev => [note, ...prev]);
+          setSidebarTab('interaction');
+        }
+        
+        // 关闭弹窗
+        setShowGlassesModal(false);
+        setGlassesWaveform(new Array(12).fill(0));
+      }, 100);
+    } else {
+      // 如果没有录音，也创建记录（无音频）
+      if (currentPodcast) {
+        const note: InterruptNote = {
+          id: `glasses-${Date.now()}`,
+          podcastId: currentPodcast.id,
+          podcastTitle: currentPodcast.title,
+          timestamp: Date.now(),
+          audioTime: glassesAudioTime,
+          content: `👓 智能眼镜语音留言 (${glassesRecordingDuration}秒)`,
+          type: 'voice',
+          voiceDuration: glassesRecordingDuration
+        };
+        setLocalInterruptNotes(prev => [note, ...prev]);
+        setSidebarTab('interaction');
+      }
+      // 关闭弹窗
+      setTimeout(() => {
+        setShowGlassesModal(false);
+        setGlassesWaveform(new Array(12).fill(0));
+      }, 500);
     }
-    // 关闭弹窗
-    setTimeout(() => {
-      setShowGlassesModal(false);
-      setGlassesWaveform(new Array(12).fill(0));
-    }, 500);
   };
 
   // 关闭眼镜弹窗
@@ -662,7 +824,18 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     if (glassesTimerRef.current) {
       clearInterval(glassesTimerRef.current);
     }
+    // 停止录音
+    if (glassesMediaRecorderRef.current) {
+      glassesMediaRecorderRef.current.stop();
+      glassesMediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+    }
+    // 停止语音识别
+    if (glassesRecognitionRef.current) {
+      glassesRecognitionRef.current.stop();
+    }
     setGlassesWaveform(new Array(12).fill(0));
+    setGlassesTranscript('');
+    setGlassesShowHighlight(false);
   };
 
   // 清理眼镜相关资源
@@ -673,6 +846,9 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
       }
       if (glassesTimerRef.current) {
         clearInterval(glassesTimerRef.current);
+      }
+      if (glassesRecognitionRef.current) {
+        glassesRecognitionRef.current.stop();
       }
     };
   }, []);
@@ -878,186 +1054,209 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     </div>
   );
 
-  // 分享卡片组件
-  const ShareCard = () => (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="w-[400px] bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl shadow-2xl border border-slate-600 overflow-hidden">
-        {/* 头部 */}
-        <div className="p-4 bg-gradient-to-r from-orange-500/20 to-red-500/20 border-b border-slate-700">
-          <div className="flex items-center justify-between">
+  // 获取嘉宾第一句话并添加红色标注
+  const getGuestFirstLineWithHighlight = () => {
+    if (!currentPodcast?.script) return { text: '', highlighted: '' };
+    const lines = currentPodcast.script.split('\n');
+    for (const line of lines) {
+      if (
+        line.includes('嘉宾') ||
+        line.includes('Guest') ||
+        line.includes(currentPodcast.guestName || '')
+      ) {
+        const match = line.match(/[：:]\s*[""]?(.+?)[""]?\s*$/);
+        let text = '';
+        if (match) {
+          text = match[1];
+        } else {
+          const colonIndex =
+            line.indexOf('：') !== -1 ? line.indexOf('：') : line.indexOf(':');
+          if (colonIndex !== -1) text = line.slice(colonIndex + 1).trim();
+        }
+        if (text) {
+          // 找出可以高亮的关键词
+          const keywords = ['勇气', '恐惧', '坚持', '珍贵', '梦想', '创业', '理想', '执着', '美学', '生产力', '折腾', '生命'];
+          let highlighted = '';
+          for (const kw of keywords) {
+            if (text.includes(kw)) {
+              highlighted = kw;
+              break;
+            }
+          }
+          return { text, highlighted };
+        }
+      }
+    }
+    return { text: currentPodcast.title, highlighted: '' };
+  };
+
+  // 分享卡片组件 - 新设计
+  const ShareCard = () => {
+    const { text: guestLine, highlighted } = getGuestFirstLineWithHighlight();
+    
+    // 渲染带高亮的文字
+    const renderHighlightedText = (text: string, keyword: string) => {
+      if (!keyword || !text.includes(keyword)) {
+        return <span>{text}</span>;
+      }
+      const parts = text.split(keyword);
+      return (
+        <>
+          {parts.map((part, i) => (
+            <React.Fragment key={i}>
+              {part}
+              {i < parts.length - 1 && (
+                <span className="text-orange-500 font-bold">{keyword}</span>
+              )}
+            </React.Fragment>
+          ))}
+        </>
+      );
+    };
+
+    return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-fade-in">
+      {/* 顶部提示 */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 text-slate-400 text-sm">
+        卡片已生成，立即分发至社交平台
+      </div>
+
+      {/* 返回按钮 */}
+      <button
+        onClick={handleCloseShareCard}
+        className="absolute top-4 right-6 px-4 py-2 bg-slate-800 text-white rounded-full text-sm hover:bg-slate-700 transition-colors border border-slate-600"
+      >
+        返回列表
+      </button>
+
+      {/* 卡片主体 */}
+      <div 
+        className="w-[380px] rounded-3xl overflow-hidden"
+        style={{
+          background: 'linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 100%)',
+          border: '1px solid #333'
+        }}
+      >
+        {/* 头部 - Logo */}
+        <div className="p-4 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className="w-10 h-10 rounded-full bg-orange-500 flex items-center justify-center text-white font-bold text-lg">
+              W!
+            </div>
+            <span className="text-white font-semibold text-lg">Weibodcast</span>
+          </div>
+        </div>
+
+        {/* 播客片段区域 */}
+        <div className="px-4 pb-4">
+          <div className="flex items-start space-x-3">
+            {/* 嘉宾头像 */}
+            <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-slate-700">
+              {currentPodcast?.guestName && currentPodcast.guestName !== 'Guest' ? (
+                <img
+                  src={`/image/${encodeURIComponent(currentPodcast.guestName)}.gif`}
+                  alt={currentPodcast.guestName}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <Music2 className="w-6 h-6 text-slate-500" />
+                </div>
+              )}
+            </div>
+            <div className="flex-1">
+              <span className="inline-block px-2 py-0.5 bg-orange-500 text-white text-xs rounded-full mb-1">
+                播客片段
+              </span>
+              <p className="text-white font-medium">
+                {currentPodcast?.guestName || '嘉宾'}：{currentPodcast?.title?.slice(0, 12)}...
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 高光时刻 - 嘉宾语录 */}
+        <div className="mx-4 mb-4">
+          <div 
+            className="p-4 rounded-2xl relative"
+            style={{
+              background: 'linear-gradient(135deg, rgba(30,30,30,0.9) 0%, rgba(20,20,20,0.9) 100%)',
+              border: '2px solid #f97316',
+              boxShadow: '0 0 20px rgba(249, 115, 22, 0.3)'
+            }}
+          >
+            <span className="absolute -top-3 left-4 px-2 py-0.5 bg-[#1a1a1a] text-orange-400 text-xs">
+              高光时刻
+            </span>
+            <p className="text-white text-lg leading-relaxed font-medium">
+              "{renderHighlightedText(guestLine, highlighted)}"
+            </p>
+          </div>
+        </div>
+
+        {/* 用户点评区域 */}
+        <div className="mx-4 mb-4">
+          <div 
+            className="p-4 rounded-2xl"
+            style={{
+              background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)'
+            }}
+          >
+            <p className="text-white leading-relaxed mb-3">
+              {transcribedText || '（语音内容识别中...）'}
+            </p>
             <div className="flex items-center space-x-2">
-              <Share2 className="w-5 h-5 text-orange-400" />
-              <span className="text-white font-medium">分享语音点评</span>
+              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                <span className="text-white text-xs">听众</span>
+              </div>
+              <span className="text-white/80 text-sm">认证深度听众</span>
             </div>
-            <button
-              onClick={handleCloseShareCard}
-              className="text-slate-400 hover:text-white transition-colors p-1"
-            >
-              <X className="w-5 h-5" />
-            </button>
           </div>
         </div>
 
-        {/* 原播客内容 - 播客播放器样式 */}
-        <div className="p-4 border-b border-slate-700/50">
-          <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">原播客片段</p>
-          <div className="p-3 bg-slate-700/30 rounded-xl">
-            <div className="flex items-center space-x-3 mb-3">
-              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shrink-0 overflow-hidden">
-                {currentPodcast?.guestName && currentPodcast.guestName !== 'Guest' ? (
-                  <img
-                    src={`/image/${encodeURIComponent(currentPodcast.guestName)}.gif`}
-                    alt={currentPodcast.guestName}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                  />
-                ) : (
-                  <Music2 className="w-6 h-6 text-white/60" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-white font-medium text-sm truncate">{currentPodcast?.title}</p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  从 {formatTime(pendingShareNote?.audioTime || 0)} 开始
-                </p>
-              </div>
-            </div>
-            {/* 播客进度条 */}
-            <div className="space-y-2">
-              <input
-                type="range"
-                value={sharePodcastProgress}
-                onChange={handleSharePodcastSeek}
-                className="w-full h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-pink-500"
-              />
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono text-slate-500">
-                  {formatTime(sharePodcastCurrentTime)}
-                </span>
-                <button
-                  onClick={toggleSharePodcast}
-                  className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center hover:scale-105 transition-transform shadow-lg"
-                >
-                  {isPlayingSharePodcast ? (
-                    <Pause className="w-5 h-5 text-white" />
-                  ) : (
-                    <Play className="w-5 h-5 text-white ml-0.5" />
-                  )}
-                </button>
-                <span className="text-[10px] font-mono text-slate-500">
-                  {formatTime(sharePodcastDuration)}
-                </span>
+        {/* 底部分享栏 */}
+        <div className="px-4 py-4 border-t border-slate-800">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500 text-xs tracking-widest uppercase">
+              SHARED VIA WEIBODCAST
+            </span>
+            <div className="flex items-center space-x-2">
+              {/* 分享按钮 */}
+              <button
+                onClick={() => handleShare('wechat')}
+                className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center hover:scale-110 transition-transform"
+                title="微信"
+              >
+                <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348z"/>
+                </svg>
+              </button>
+              <button
+                onClick={() => handleShare('weibo')}
+                className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center hover:scale-110 transition-transform"
+                title="微博"
+              >
+                <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M10.098 20.323c-3.977.391-7.414-1.406-7.672-4.02-.259-2.609 2.759-5.047 6.74-5.441 3.979-.394 7.413 1.404 7.671 4.018.259 2.6-2.759 5.049-6.737 5.439z"/>
+                </svg>
+              </button>
+              {/* 页面指示器 */}
+              <div className="flex items-center space-x-1 ml-2">
+                <div className="w-2 h-2 rounded-full bg-orange-500" />
+                <div className="w-2 h-2 rounded-full bg-slate-600" />
               </div>
             </div>
           </div>
         </div>
 
-        {/* 我的语音点评 - 播放器样式 */}
-        <div className="p-4 border-b border-slate-700/50">
-          <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">我的语音点评</p>
-          <div className="p-3 bg-slate-700/30 rounded-xl">
-            <div className="flex items-center space-x-3 mb-3">
-              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center shrink-0">
-                <Mic className="w-6 h-6 text-white" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-white font-medium text-sm">语音留言</p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  时长 {pendingShareNote?.voiceDuration || 0} 秒
-                </p>
-              </div>
-            </div>
-            {/* 语音进度条 */}
-            <div className="space-y-2">
-              <input
-                type="range"
-                value={shareVoiceProgress}
-                onChange={handleShareVoiceSeek}
-                className="w-full h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-orange-500"
-              />
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono text-slate-500">
-                  {formatTime(shareVoiceCurrentTime)}
-                </span>
-                <button
-                  onClick={toggleShareVoice}
-                  className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center hover:scale-105 transition-transform shadow-lg"
-                >
-                  {isPlayingShareVoice ? (
-                    <Pause className="w-5 h-5 text-white" />
-                  ) : (
-                    <Play className="w-5 h-5 text-white ml-0.5" />
-                  )}
-                </button>
-                <span className="text-[10px] font-mono text-slate-500">
-                  {formatTime(pendingShareNote?.voiceDuration || 0)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* 识别文字 */}
-          <div className="mt-3 p-3 bg-slate-900/50 rounded-xl">
-            <p className="text-xs text-slate-500 mb-1">语音识别</p>
-            <p className="text-sm text-slate-300 leading-relaxed">{transcribedText}</p>
-          </div>
-        </div>
-
-        {/* 社交媒体分享 */}
-        <div className="p-4">
-          <p className="text-xs text-slate-500 mb-3 uppercase tracking-wider">分享到</p>
-          <div className="flex items-center justify-center space-x-4">
-            {/* 微信 */}
-            <button
-              onClick={() => handleShare('wechat')}
-              className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center hover:scale-110 transition-transform shadow-lg"
-              title="微信"
-            >
-              <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178A1.17 1.17 0 0 1 4.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178 1.17 1.17 0 0 1-1.162-1.178c0-.651.52-1.18 1.162-1.18zm5.34 2.867c-1.797-.052-3.746.512-5.28 1.786-1.72 1.428-2.687 3.72-1.78 6.22.942 2.453 3.666 4.229 6.884 4.229.826 0 1.622-.12 2.361-.336a.722.722 0 0 1 .598.082l1.584.926a.272.272 0 0 0 .14.047c.134 0 .24-.111.24-.247 0-.06-.023-.12-.038-.177l-.327-1.233a.582.582 0 0 1-.023-.156.49.49 0 0 1 .201-.398C23.024 18.48 24 16.82 24 14.98c0-3.21-2.931-5.837-6.656-6.088V8.89c-.135-.01-.269-.03-.407-.03zm-2.53 3.274c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.97-.982zm4.844 0c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.969-.982z"/>
-              </svg>
-            </button>
-            
-            {/* 微博 */}
-            <button
-              onClick={() => handleShare('weibo')}
-              className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center hover:scale-110 transition-transform shadow-lg"
-              title="微博"
-            >
-              <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M10.098 20.323c-3.977.391-7.414-1.406-7.672-4.02-.259-2.609 2.759-5.047 6.74-5.441 3.979-.394 7.413 1.404 7.671 4.018.259 2.6-2.759 5.049-6.737 5.439l-.002.004zM9.05 17.219c-.384.616-1.208.884-1.829.602-.612-.279-.793-.991-.406-1.593.379-.595 1.176-.861 1.793-.601.622.263.82.972.442 1.592zm1.27-1.627c-.141.237-.449.353-.689.253-.236-.09-.313-.361-.177-.586.138-.227.436-.346.672-.24.239.09.315.36.18.573h.014zm.176-2.719c-1.893-.493-4.033.45-4.857 2.118-.836 1.704-.026 3.591 1.886 4.21 1.983.64 4.318-.341 5.132-2.179.8-1.793-.201-3.642-2.161-4.149zm7.563-1.224c-.346-.105-.579-.18-.405-.649.381-1.017.42-1.894-.009-2.517-.789-1.14-2.962-.899-5.399-.025l.002-.002c0-.002-.576.199-.429-.201.288-.798.245-1.469-.156-1.858-1.043-1.013-3.813-.019-6.188 2.22-1.78 1.676-2.814 3.452-2.814 5.015 0 2.988 3.84 4.806 7.59 4.806 4.916 0 8.187-2.86 8.187-5.122 0-1.37-1.153-2.145-2.379-2.667zm3.461-6.106c-.853-1.062-2.109-1.46-3.418-1.184-.509.107-.835.601-.728 1.104.107.503.602.835 1.104.728.639-.135 1.252.059 1.665.577.413.519.519 1.186.283 1.785-.193.494.05 1.05.543 1.243.494.193 1.05-.05 1.243-.543.477-1.213.26-2.574-.692-3.71zm1.586-2.511c-1.533-1.908-3.789-2.621-6.143-2.125-.578.122-1.003.691-.881 1.269.122.578.691 1.003 1.269.881 1.636-.345 3.201.15 4.269 1.479 1.068 1.329 1.299 3.048.631 4.695-.218.539.04 1.152.579 1.37.539.218 1.152-.04 1.37-.579.965-2.381.631-4.876-.914-6.79l-.18-.2z"/>
-              </svg>
-            </button>
-            
-            {/* Twitter/X */}
-            <button
-              onClick={() => handleShare('twitter')}
-              className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center hover:scale-110 transition-transform shadow-lg border border-slate-600"
-              title="Twitter/X"
-            >
-              <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-              </svg>
-            </button>
-            
-            {/* 复制链接 */}
-            <button
-              onClick={() => handleShare('copy')}
-              className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center hover:scale-110 transition-transform shadow-lg border border-slate-600"
-              title="复制链接"
-            >
-              <Download className="w-5 h-5 text-white" />
-            </button>
-          </div>
-        </div>
-
-        {/* 底部按钮 */}
-        <div className="p-4 bg-slate-800/50 border-t border-slate-700">
+        {/* 保存按钮 */}
+        <div className="px-4 pb-4">
           <button
             onClick={handleConfirmShare}
-            className="w-full py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl font-medium hover:from-orange-400 hover:to-red-400 transition-all"
+            className="w-full py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl font-medium hover:from-orange-400 hover:to-orange-500 transition-all"
           >
             保存到互动记录
           </button>
@@ -1065,117 +1264,194 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
       </div>
     </div>
   );
+  };
 
-  // 智能眼镜弹窗组件
+  // 智能眼镜弹窗组件 - HUD 风格
   const GlassesModal = () => (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md animate-fade-in">
-      <div className="relative w-[700px]">
-        {/* 关闭按钮 */}
-        <button
-          onClick={handleCloseGlassesModal}
-          className="absolute -top-12 right-0 text-slate-400 hover:text-white transition-colors p-2 z-10"
-        >
-          <X className="w-6 h-6" />
-        </button>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center animate-fade-in overflow-hidden"
+      style={{
+        background: 'radial-gradient(circle at 20% 30%, #ffffff 0%, transparent 70%), radial-gradient(circle at 80% 70%, #dcd0ff 0%, transparent 70%), linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)'
+      }}
+    >
+      {/* 关闭按钮 */}
+      <button
+        onClick={handleCloseGlassesModal}
+        className="absolute top-5 right-5 text-slate-500 hover:text-slate-800 transition-colors p-3 z-[200] bg-white/70 backdrop-blur-sm rounded-full cursor-pointer hover:bg-white shadow-lg"
+      >
+        <X className="w-6 h-6" />
+      </button>
 
-        {/* 连接状态提示 */}
-        <div className="absolute -top-12 left-0 flex items-center space-x-2 text-green-400">
-          <BluetoothConnected className="w-5 h-5" />
-          <span className="text-sm font-medium">智能眼镜已连接</span>
-        </div>
+      {/* 连接状态提示 */}
+      <div className="absolute top-5 left-5 flex items-center space-x-2 text-emerald-600 bg-white/50 backdrop-blur-sm px-4 py-2 rounded-full z-[150]">
+        <BluetoothConnected className="w-5 h-5" />
+        <span className="text-sm font-medium">智能眼镜已连接</span>
+        <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+      </div>
 
-        {/* 眼镜主体 */}
-        <div className="relative">
-          {/* 眼镜框架 SVG */}
-          <svg viewBox="0 0 700 200" className="w-full">
-            {/* 左镜片 */}
-            <ellipse cx="175" cy="100" rx="140" ry="80" fill="#1e293b" stroke="#475569" strokeWidth="8" />
-            {/* 右镜片 */}
-            <ellipse cx="525" cy="100" rx="140" ry="80" fill="#1e293b" stroke="#475569" strokeWidth="8" />
-            {/* 鼻梁 */}
-            <path d="M 315 100 Q 350 130 385 100" fill="none" stroke="#475569" strokeWidth="8" strokeLinecap="round" />
-            {/* 左镜腿 */}
-            <path d="M 35 100 L -20 80" fill="none" stroke="#475569" strokeWidth="8" strokeLinecap="round" />
-            {/* 右镜腿 */}
-            <path d="M 665 100 L 720 80" fill="none" stroke="#475569" strokeWidth="8" strokeLinecap="round" />
-          </svg>
+      {/* 测试按钮 - 手动触发高亮 */}
+      <button
+        onClick={triggerGlassesHighlight}
+        className="absolute top-5 left-1/2 -translate-x-1/2 text-slate-600 bg-white/50 backdrop-blur-sm px-4 py-2 rounded-full text-sm hover:bg-white/70 transition-colors z-[150] cursor-pointer"
+      >
+        测试：模拟说"很有道理"
+      </button>
 
-          {/* 左镜片内容 - 语音波形 */}
-          <div className="absolute left-[35px] top-[20px] w-[280px] h-[160px] flex items-center justify-center">
-            <div className="flex items-center space-x-2">
-              {/* 波形显示 */}
-              <div className="flex items-center space-x-1 h-16">
-                {glassesWaveform.map((level, i) => (
-                  <div
-                    key={i}
-                    className="w-2 bg-gradient-to-t from-cyan-500 to-blue-400 rounded-full transition-all duration-100"
-                    style={{ 
-                      height: `${glassesRecording ? level * 48 : 8}px`,
-                      opacity: glassesRecording ? 1 : 0.3
-                    }}
-                  />
-                ))}
-              </div>
-              
-              {/* 完成按钮 */}
-              {glassesRecording && (
-                <button
-                  onClick={handleGlassesFinish}
-                  className="ml-4 w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center hover:scale-110 transition-transform shadow-lg"
-                  title="说完了"
-                >
-                  <Check className="w-5 h-5 text-white" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* 右镜片内容 - 播客信息 */}
-          <div className="absolute right-[35px] top-[20px] w-[280px] h-[160px] flex items-center justify-center">
-            <div className="text-center px-4">
-              <div className="w-12 h-12 mx-auto rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center mb-2 overflow-hidden">
+      {/* 眼镜主体 */}
+      <div className="glasses-wrapper flex items-center justify-center w-full max-w-[1100px]"
+        style={{ perspective: '1500px', filter: 'drop-shadow(0 40px 80px rgba(0,0,0,0.25))' }}
+      >
+        <div className="flex items-center justify-center">
+          {/* 左镜片 */}
+          <div 
+            className="relative overflow-hidden"
+            style={{
+              width: '420px',
+              height: '320px',
+              background: 'rgba(20, 20, 25, 0.45)',
+              border: '14px solid #080808',
+              borderRadius: '60px 60px 110px 110px',
+              backdropFilter: 'blur(4px) brightness(0.85)',
+              boxShadow: 'inset 0 0 60px rgba(0,0,0,0.7), inset 0 15px 30px rgba(255,255,255,0.05), 0 10px 30px rgba(0,0,0,0.3)',
+              transform: 'perspective(600px) rotateY(3deg)'
+            }}
+          >
+            {/* HUD 层 - 左镜片 */}
+            <div className={`absolute inset-0 p-6 transition-all duration-400 ${glassesShowHighlight ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+              {/* 媒体/播客封面 - 只在检测到关键词时显示 */}
+              <div className={`absolute top-8 left-6 w-32 h-32 transition-all duration-500 ${glassesShowHighlight ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-5'}`}>
                 {currentPodcast?.guestName && currentPodcast.guestName !== 'Guest' ? (
                   <img
                     src={`/image/${encodeURIComponent(currentPodcast.guestName)}.gif`}
                     alt={currentPodcast.guestName}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
+                    style={{ filter: 'drop-shadow(0 0 10px rgba(0, 242, 255, 0.3))' }}
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';
                     }}
                   />
                 ) : (
-                  <Music2 className="w-6 h-6 text-white/60" />
+                  <div className="w-full h-full rounded-xl bg-gradient-to-br from-cyan-500/30 to-blue-500/30 flex items-center justify-center">
+                    <Music2 className="w-12 h-12 text-cyan-400/60" />
+                  </div>
                 )}
               </div>
-              <p className="text-white text-xs font-medium truncate">{currentPodcast?.title}</p>
-              <p className="text-slate-400 text-[10px] mt-1">暂停于 {formatTime(glassesAudioTime)}</p>
+
+              {/* 状态标签 - 只在检测到关键词时显示 */}
+              <div className={`absolute bottom-6 left-6 flex flex-col gap-0.5 transition-all duration-500 ${glassesShowHighlight ? 'opacity-100' : 'opacity-0'}`}>
+                <span className="text-[10px] text-white/50 tracking-[2.5px] uppercase font-semibold">
+                  智能语境分析 @
+                </span>
+                <span 
+                  className="text-2xl font-light font-mono"
+                  style={{ color: '#00f2ff', textShadow: '0 0 15px rgba(0, 242, 255, 0.4)' }}
+                >
+                  {formatTime(glassesAudioTime)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* 鼻梁 */}
+          <div 
+            className="relative z-10 -mx-4"
+            style={{
+              width: '70px',
+              height: '35px',
+              background: '#080808',
+              borderRadius: '4px 4px 20px 20px',
+              boxShadow: 'inset 0 -5px 15px rgba(0,0,0,0.8)',
+              border: '1px solid rgba(255,255,255,0.1)'
+            }}
+          />
+
+          {/* 右镜片 */}
+          <div 
+            className="relative overflow-hidden"
+            style={{
+              width: '420px',
+              height: '320px',
+              background: 'rgba(20, 20, 25, 0.45)',
+              border: '14px solid #080808',
+              borderRadius: '60px 60px 110px 110px',
+              backdropFilter: 'blur(4px) brightness(0.85)',
+              boxShadow: 'inset 0 0 60px rgba(0,0,0,0.7), inset 0 15px 30px rgba(255,255,255,0.05), 0 10px 30px rgba(0,0,0,0.3)',
+              transform: 'perspective(600px) rotateY(-3deg)'
+            }}
+          >
+            {/* HUD 层 - 右镜片 */}
+            <div className="absolute inset-0 p-6">
+              {/* 播客信息 */}
+              <div className="absolute top-8 right-6 text-right">
+                <p className="text-white text-sm font-medium truncate max-w-[200px]">{currentPodcast?.title}</p>
+                <p className="text-white/40 text-xs mt-1">By Weibodcast AI</p>
+              </div>
+
+              {/* 状态显示 */}
+              <div className="absolute bottom-8 right-6 text-right">
+                <span className="text-[10px] text-white/50 tracking-[2.5px] uppercase">
+                  {glassesRecognitionState}
+                </span>
+              </div>
+
+              {/* 完成按钮 */}
+              {glassesRecording && (
+                <div className="absolute bottom-8 left-6">
+                  <button
+                    onClick={handleGlassesFinish}
+                    className="px-4 py-2 rounded-full text-sm font-medium transition-all hover:scale-105"
+                    style={{
+                      background: 'rgba(0, 242, 255, 0.2)',
+                      border: '1px solid rgba(0, 242, 255, 0.5)',
+                      color: '#00f2ff',
+                      boxShadow: '0 0 20px rgba(0, 242, 255, 0.3)'
+                    }}
+                  >
+                    <span className="flex items-center space-x-2">
+                      <Check className="w-4 h-4" />
+                      <span>说完了</span>
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
+      </div>
 
-        {/* 录音状态 */}
-        <div className="mt-6 text-center">
-          {glassesRecording ? (
-            <div className="flex items-center justify-center space-x-3">
-              <span className="inline-block w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-              <span className="text-white font-mono text-xl">
-                {Math.floor(glassesRecordingDuration / 60).toString().padStart(2, '0')}:
-                {(glassesRecordingDuration % 60).toString().padStart(2, '0')}
-              </span>
-              <span className="text-slate-400 text-sm">正在录音...</span>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center space-x-2 text-green-400">
-              <Check className="w-5 h-5" />
-              <span>录音已保存</span>
-            </div>
-          )}
+      {/* 底部语音识别文字 */}
+      <div className="absolute bottom-24 left-1/2 -translate-x-1/2 text-center">
+        <span className={`text-sm text-slate-600 transition-opacity ${glassesTranscript ? 'opacity-100' : 'opacity-0'}`}>
+          {glassesTranscript}
+        </span>
+      </div>
+
+      {/* 底部波形和文字 */}
+      <div className="absolute bottom-14 left-1/2 -translate-x-1/2 flex flex-col items-center">
+        {/* 波形图 */}
+        <div className={`flex items-center justify-center h-5 space-x-0.5 transition-all ${glassesShowHighlight ? 'opacity-100' : 'opacity-30'}`}>
+          {glassesWaveform.map((level, i) => (
+            <div
+              key={i}
+              className={`w-1 rounded-full transition-all duration-75 ${glassesShowHighlight ? 'bg-cyan-500' : 'bg-slate-500'}`}
+              style={{ 
+                height: `${glassesRecording ? level * 16 : 4}px`,
+              }}
+            />
+          ))}
         </div>
-
+        
         {/* 提示文字 */}
-        <p className="text-center text-slate-500 text-sm mt-4">
-          👓 通过智能眼镜记录你的想法，点击左镜片的 ✓ 按钮完成录音
+        <p className="text-[9px] text-slate-400/50 tracking-[2px] uppercase mt-4">
+          试着说："很有道理"
         </p>
+      </div>
+
+      {/* 录音时长显示 */}
+      <div className="absolute bottom-5 left-1/2 -translate-x-1/2">
+        <span className={`text-sm text-slate-500 transition-opacity ${glassesRecording ? 'opacity-100' : 'opacity-0'}`}>
+          {Math.floor(glassesRecordingDuration / 60).toString().padStart(2, '0')}:
+          {(glassesRecordingDuration % 60).toString().padStart(2, '0')}
+        </span>
       </div>
     </div>
   );
