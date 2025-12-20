@@ -18,16 +18,6 @@ const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, 
   const [currentSpeaker, setCurrentSpeaker] = useState<'Host' | 'Guest' | null>(null);
   const [showPlayer, setShowPlayer] = useState(false);
 
-  // Auto-play when audioUrl changes (e.g., when selecting from history)
-  useEffect(() => {
-    if (audioUrl && audioRef.current) {
-        audioRef.current.load();
-        audioRef.current.play().catch(e => {
-            console.log("Auto-play prevented by browser policy or missing file", e);
-        });
-    }
-  }, [audioUrl]);
-
   // Timeline synchronization
   useEffect(() => {
     const audio = audioRef.current;

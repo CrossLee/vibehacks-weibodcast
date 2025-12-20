@@ -1197,7 +1197,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
           </div>
         </div>
 
-        {/* 用户点评区域 */}
+        {/* 用户语音点评区域 */}
         <div className="mx-4 mb-4">
           <div 
             className="p-4 rounded-2xl"
@@ -1205,9 +1205,29 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
               background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)'
             }}
           >
-            <p className="text-white leading-relaxed mb-3">
-              {transcribedText || '（语音内容识别中...）'}
-            </p>
+            {/* 语音播放按钮 */}
+            {pendingShareNote?.voiceUrl ? (
+              <button
+                onClick={toggleShareVoice}
+                className="w-full flex items-center justify-center space-x-3 py-3 bg-white/20 hover:bg-white/30 rounded-xl transition-all mb-3"
+              >
+                {isPlayingShareVoice ? (
+                  <>
+                    <Pause className="w-6 h-6 text-white" />
+                    <span className="text-white font-medium">暂停语音</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-6 h-6 text-white" />
+                    <span className="text-white font-medium">播放我的语音点评 ({pendingShareNote.voiceDuration}秒)</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <div className="py-3 text-white/60 text-center text-sm">
+                暂无语音
+              </div>
+            )}
             <div className="flex items-center space-x-2">
               <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
                 <span className="text-white text-xs">听众</span>
