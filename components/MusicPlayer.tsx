@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { PodcastResult } from '../types';
 import { 
   Play, 
@@ -17,9 +17,7 @@ import {
 interface DancerState { 
   id: number; 
   x: number; 
-  y: number; 
-  rotation: number; 
-  scale: number; 
+  jumpKey: number; // 用 key 触发动画而不是 boolean
 }
 
 interface MusicPlayerProps {
@@ -41,7 +39,19 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   const [dancers, setDancers] = useState<DancerState[]>([]);
   const audioRef = useRef<HTMLAudioElement>(null);
   const hasAutoPlayed = useRef(false);
-  const danceTimerRefs = useRef<(number | null)[]>([]);
+
+  // 生成固定的撒花数据，不会因为 state 更新而重新渲染
+  const confettiPieces = useMemo(() => {
+    const colors = ['#ff6b6b', '#feca57', '#48dbfb', '#ff9ff3', '#54a0ff', '#5f27cd', '#00d2d3', '#1dd1a1'];
+    return Array.from({ length: 50 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      size: 8 + Math.random() * 12,
+      delay: Math.random() * 3,
+      duration: 3 + Math.random() * 2,
+    }));
+  }, []);
 
   const currentPodcast = history[currentIndex];
 
@@ -82,43 +92,14 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   // 舞蹈动画逻辑
   useEffect(() => {
     if (showDanceParty) {
-      // 初始化 5 个舞者
+      // 初始化 5 个舞者，固定水平位置
       const initialDancers = Array.from({ length: 5 }, (_, i) => ({
         id: i,
-        x: 20 + Math.random() * 60,
-        y: 20 + Math.random() * 60,
-        rotation: (Math.random() - 0.5) * 40,
-        scale: 0.8 + Math.random() * 0.4
+        x: 10 + i * 20,
+        jumpKey: Date.now() + i, // 初始跳跃
       }));
       setDancers(initialDancers);
-      danceTimerRefs.current = new Array(5).fill(null);
-
-      // 开始舞蹈
-      initialDancers.forEach((_, index) => {
-        const moveDancer = () => {
-          setDancers(prev => {
-            const next = [...prev];
-            if (next[index]) {
-              next[index] = {
-                ...next[index],
-                x: 15 + Math.random() * 70,
-                y: 15 + Math.random() * 70,
-                rotation: (Math.random() - 0.5) * 120,
-              };
-            }
-            return next;
-          });
-          danceTimerRefs.current[index] = window.setTimeout(moveDancer, 100 + Math.random() * 400);
-        };
-        moveDancer();
-      });
     }
-
-    return () => {
-      danceTimerRefs.current.forEach(timer => {
-        if (timer) window.clearTimeout(timer);
-      });
-    };
   }, [showDanceParty]);
 
   const openDanceParty = () => {
@@ -129,9 +110,14 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
 
   const closeDanceParty = () => {
     setShowDanceParty(false);
-    danceTimerRefs.current.forEach(timer => {
-      if (timer) window.clearTimeout(timer);
-    });
+    setDancers([]);
+  };
+
+  // 点击舞者触发跳跃 - 通过更新 key 来重新触发动画
+  const handleDancerClick = (id: number) => {
+    setDancers(prev => prev.map(d => 
+      d.id === id ? { ...d, jumpKey: Date.now() } : d
+    ));
   };
 
   const togglePlay = () => {
@@ -173,7 +159,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
 
   // 全屏舞蹈派对组件
   const DancePartyOverlay = () => (
-    <div className="fixed inset-0 z-[100] bg-slate-900 flex flex-col">
+    <div className="fixed inset-0 z-[100] bg-slate-900 overflow-hidden">
       <button 
         onClick={(e) => {
           e.stopPropagation();
@@ -184,57 +170,98 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
         <X className="w-6 h-6" />
       </button>
       
-      <div className="flex-1 relative overflow-hidden">
-        {/* Grid Background */}
-        <div className="absolute inset-0 opacity-10 pointer-events-none" style={{
-          backgroundImage: `radial-gradient(circle, #4b5563 1px, transparent 1px)`,
-          backgroundSize: '40px 40px'
-        }} />
-        
-        {/* Dancers */}
-        {guestImageUrl && dancers.map((dancer, idx) => (
+      {/* Grid Background */}
+      <div className="absolute inset-0 opacity-10 pointer-events-none" style={{
+        backgroundImage: `radial-gradient(circle, #4b5563 1px, transparent 1px)`,
+        backgroundSize: '40px 40px'
+      }} />
+
+      {/* Confetti 撒花效果 */}
+      {confettiPieces.map((piece) => (
+        <div
+          key={piece.id}
+          className="absolute pointer-events-none"
+          style={{
+            left: `${piece.x}%`,
+            top: '-20px',
+            zIndex: 60,
+            animation: `confetti-fall ${piece.duration}s linear ${piece.delay}s infinite`,
+          }}
+        >
           <div
-            key={dancer.id}
-            className="absolute transition-all duration-300 ease-[cubic-bezier(0.175,0.885,0.32,1.275)]"
             style={{
-              left: `${dancer.x}%`,
-              top: `${dancer.y}%`,
-              transform: `translate(-50%, -50%) rotate(${dancer.rotation}deg) scale(${dancer.scale})`,
-              zIndex: idx + 10
+              width: piece.size,
+              height: piece.size,
+              backgroundColor: piece.color,
+              borderRadius: piece.id % 2 === 0 ? '50%' : '2px',
+              animation: 'confetti-spin 2s linear infinite',
             }}
-          >
-            <div className="animate-chaotic-bounce" style={{ animationDelay: `${idx * 0.12}s` }}>
-              <img
-                src={guestImageUrl}
-                alt={`Dancer ${idx}`}
-                className="w-32 h-32 md:w-40 md:h-40 rounded-2xl shadow-2xl border-2 border-white/20 object-cover"
-              />
-            </div>
-          </div>
-        ))}
-        
-        {/* Central Party Indicator */}
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-          <div className="w-[500px] h-[500px] bg-pink-500/5 rounded-full animate-ping opacity-20" />
+          />
         </div>
-      </div>
+      ))}
       
+      {/* Ground line */}
+      <div className="absolute bottom-24 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-pink-500/30 to-transparent z-[5]" />
+      
+      {/* Dancers - 固定在底部，点击跳跃 */}
+      {guestImageUrl && dancers.map((dancer, idx) => (
+        <div
+          key={dancer.id}
+          className="absolute cursor-pointer"
+          style={{
+            left: `${dancer.x}%`,
+            bottom: '100px',
+            transform: 'translateX(-50%)',
+            zIndex: 50
+          }}
+          onClick={() => handleDancerClick(dancer.id)}
+        >
+          <div 
+            key={dancer.jumpKey}
+            className="animate-jump-bounce"
+            style={{ animationDelay: `${idx * 0.15}s` }}
+          >
+            <img
+              src={guestImageUrl}
+              alt={`Dancer ${idx}`}
+              className="w-28 h-28 md:w-36 md:h-36 rounded-2xl shadow-2xl border-2 border-white/20 object-cover hover:scale-110 transition-transform"
+            />
+          </div>
+        </div>
+      ))}
+      
+      {/* Central Party Indicator */}
+      <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-[1]">
+        <div className="w-[500px] h-[500px] bg-pink-500/5 rounded-full animate-ping opacity-20" />
+      </div>
+    
       {/* Title */}
-      <div className="absolute bottom-8 left-0 right-0 text-center">
+      <div className="absolute bottom-8 left-0 right-0 text-center z-[100]">
         <h2 className="text-2xl font-bold text-white">{currentPodcast?.title}</h2>
-        <p className="text-slate-400 mt-2">🎉 {currentPodcast?.guestName} Dance Party 🎉</p>
+        <p className="text-slate-400 mt-2">🎉 点击图片让 {currentPodcast?.guestName} 跳起来！🎉</p>
       </div>
       
       <style>{`
-        @keyframes chaotic-bounce {
-          0%, 100% { transform: scale(1, 1) translateY(0); }
-          15% { transform: scale(1.4, 0.6) translateY(15px); }
-          35% { transform: scale(0.6, 1.5) translateY(-50px); }
-          55% { transform: scale(1.2, 0.8) translateY(0); }
-          75% { transform: scale(0.8, 1.2) translateY(-20px); }
+        @keyframes jump-bounce {
+          0% { transform: translateY(0) rotate(0deg); }
+          15% { transform: translateY(-80px) rotate(-5deg); }
+          30% { transform: translateY(-120px) rotate(5deg); }
+          45% { transform: translateY(-80px) rotate(-3deg); }
+          60% { transform: translateY(-40px) rotate(3deg); }
+          75% { transform: translateY(-20px) rotate(-2deg); }
+          90% { transform: translateY(-5px) rotate(1deg); }
+          100% { transform: translateY(0) rotate(0deg); }
         }
-        .animate-chaotic-bounce {
-          animation: chaotic-bounce 0.55s infinite ease-in-out;
+        .animate-jump-bounce {
+          animation: jump-bounce 1.5s ease-out;
+        }
+        @keyframes confetti-fall {
+          0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(100vh) rotate(720deg); opacity: 0.8; }
+        }
+        @keyframes confetti-spin {
+          0% { transform: rotateX(0) rotateY(0); }
+          100% { transform: rotateX(360deg) rotateY(360deg); }
         }
       `}</style>
     </div>
