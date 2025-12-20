@@ -342,28 +342,7 @@ const App: React.FC = () => {
                 <LayoutDashboard className="w-4 h-4 mr-2" />
                 Generator
              </button>
-             <button
-                onClick={() => setView('spider')}
-                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                    view === 'spider' 
-                    ? 'bg-gradient-to-r from-green-600 to-teal-600 text-white shadow' 
-                    : 'text-slate-400 hover:text-white'
-                }`}
-             >
-                <Bug className="w-4 h-4 mr-2" />
-                Spider Lab
-             </button>
-             <button
-                onClick={() => setView('player')}
-                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                    view === 'player' 
-                    ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow' 
-                    : 'text-slate-400 hover:text-white'
-                }`}
-             >
-                <PlayCircle className="w-4 h-4 mr-2" />
-                Player
-             </button>
+             {/* Spider Lab 和 Player 页签已隐藏 */}
           </div>
 
           <a href="#" className="text-slate-500 hover:text-white transition-colors hidden md:block">
