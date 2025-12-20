@@ -336,7 +336,7 @@ const App: React.FC = () => {
         </header>
 
         {view === 'podcast' ? (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fade-in">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fade-in items-start">
                 {/* Left Column: Input & History */}
                 <div className="lg:col-span-4 space-y-6">
                     <InputSection 
@@ -365,7 +365,7 @@ const App: React.FC = () => {
 
                 {/* Right Column: Logs & Result */}
                 <div className="lg:col-span-8 space-y-6">
-                    {(status !== AppStatus.IDLE && status !== AppStatus.COMPLETED) && (
+                    {logs.length > 0 && (
                         <LogViewer logs={logs} isExpanded={true} />
                     )}
 
