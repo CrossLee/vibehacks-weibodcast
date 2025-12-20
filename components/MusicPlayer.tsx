@@ -68,6 +68,11 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   const [transcribedText, setTranscribedText] = useState('');
   const [isPlayingSharePodcast, setIsPlayingSharePodcast] = useState(false);
   const [isPlayingShareVoice, setIsPlayingShareVoice] = useState(false);
+  const [sharePodcastProgress, setSharePodcastProgress] = useState(0);
+  const [sharePodcastCurrentTime, setSharePodcastCurrentTime] = useState(0);
+  const [sharePodcastDuration, setSharePodcastDuration] = useState(0);
+  const [shareVoiceProgress, setShareVoiceProgress] = useState(0);
+  const [shareVoiceCurrentTime, setShareVoiceCurrentTime] = useState(0);
   const shareAudioRef = useRef<HTMLAudioElement | null>(null);
   const shareVoiceRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -451,6 +456,11 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     setTranscribedText('');
     setIsPlayingSharePodcast(false);
     setIsPlayingShareVoice(false);
+    setSharePodcastProgress(0);
+    setSharePodcastCurrentTime(0);
+    setSharePodcastDuration(0);
+    setShareVoiceProgress(0);
+    setShareVoiceCurrentTime(0);
     if (shareAudioRef.current) {
       shareAudioRef.current.pause();
       shareAudioRef.current = null;
@@ -464,7 +474,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   // 播放分享卡片中的播客片段
   const toggleSharePodcast = () => {
     if (!currentPodcast?.audioUrl) return;
-    
+
     if (isPlayingSharePodcast) {
       shareAudioRef.current?.pause();
       setIsPlayingSharePodcast(false);
@@ -472,8 +482,21 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
       if (!shareAudioRef.current) {
         shareAudioRef.current = new Audio(currentPodcast.audioUrl);
         shareAudioRef.current.onended = () => setIsPlayingSharePodcast(false);
+        shareAudioRef.current.onloadedmetadata = () => {
+          if (shareAudioRef.current) {
+            setSharePodcastDuration(shareAudioRef.current.duration);
+          }
+        };
+        shareAudioRef.current.ontimeupdate = () => {
+          if (shareAudioRef.current) {
+            const current = shareAudioRef.current.currentTime;
+            const duration = shareAudioRef.current.duration;
+            setSharePodcastCurrentTime(current);
+            setSharePodcastProgress((current / duration) * 100);
+          }
+        };
       }
-      if (pendingShareNote) {
+      if (pendingShareNote && sharePodcastCurrentTime === 0) {
         shareAudioRef.current.currentTime = Math.max(0, pendingShareNote.audioTime - 5);
       }
       shareAudioRef.current.play();
@@ -481,20 +504,49 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     }
   };
 
+  // 分享卡片播客进度条拖动
+  const handleSharePodcastSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (shareAudioRef.current) {
+      const time = (parseFloat(e.target.value) / 100) * shareAudioRef.current.duration;
+      shareAudioRef.current.currentTime = time;
+      setSharePodcastProgress(parseFloat(e.target.value));
+    }
+  };
+
   // 播放分享卡片中的语音评论
   const toggleShareVoice = () => {
     if (!pendingShareNote?.voiceUrl) return;
-    
+
     if (isPlayingShareVoice) {
       shareVoiceRef.current?.pause();
       setIsPlayingShareVoice(false);
     } else {
       if (!shareVoiceRef.current) {
         shareVoiceRef.current = new Audio(pendingShareNote.voiceUrl);
-        shareVoiceRef.current.onended = () => setIsPlayingShareVoice(false);
+        shareVoiceRef.current.onended = () => {
+          setIsPlayingShareVoice(false);
+          setShareVoiceProgress(0);
+          setShareVoiceCurrentTime(0);
+        };
+        shareVoiceRef.current.ontimeupdate = () => {
+          if (shareVoiceRef.current && pendingShareNote?.voiceDuration) {
+            const current = shareVoiceRef.current.currentTime;
+            setShareVoiceCurrentTime(current);
+            setShareVoiceProgress((current / pendingShareNote.voiceDuration) * 100);
+          }
+        };
       }
       shareVoiceRef.current.play();
       setIsPlayingShareVoice(true);
+    }
+  };
+
+  // 分享卡片语音进度条拖动
+  const handleShareVoiceSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (shareVoiceRef.current && pendingShareNote?.voiceDuration) {
+      const time = (parseFloat(e.target.value) / 100) * pendingShareNote.voiceDuration;
+      shareVoiceRef.current.currentTime = time;
+      setShareVoiceProgress(parseFloat(e.target.value));
     }
   };
 
@@ -741,52 +793,106 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
           </div>
         </div>
 
-        {/* 原播客内容 */}
+        {/* 原播客内容 - 播客播放器样式 */}
         <div className="p-4 border-b border-slate-700/50">
           <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">原播客片段</p>
-          <div className="flex items-center space-x-3 p-3 bg-slate-700/30 rounded-xl">
-            <button
-              onClick={toggleSharePodcast}
-              className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shrink-0 hover:scale-105 transition-transform"
-            >
-              {isPlayingSharePodcast ? (
-                <Pause className="w-5 h-5 text-white" />
-              ) : (
-                <Play className="w-5 h-5 text-white ml-0.5" />
-              )}
-            </button>
-            <div className="flex-1 min-w-0">
-              <p className="text-white font-medium text-sm truncate">{currentPodcast?.title}</p>
-              <p className="text-xs text-slate-400 mt-1">
-                从 {formatTime(pendingShareNote?.audioTime || 0)} 开始
-              </p>
+          <div className="p-3 bg-slate-700/30 rounded-xl">
+            <div className="flex items-center space-x-3 mb-3">
+              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shrink-0 overflow-hidden">
+                {currentPodcast?.guestName && currentPodcast.guestName !== 'Guest' ? (
+                  <img
+                    src={`/image/${encodeURIComponent(currentPodcast.guestName)}.gif`}
+                    alt={currentPodcast.guestName}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <Music2 className="w-6 h-6 text-white/60" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-medium text-sm truncate">{currentPodcast?.title}</p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  从 {formatTime(pendingShareNote?.audioTime || 0)} 开始
+                </p>
+              </div>
+            </div>
+            {/* 播客进度条 */}
+            <div className="space-y-2">
+              <input
+                type="range"
+                value={sharePodcastProgress}
+                onChange={handleSharePodcastSeek}
+                className="w-full h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-pink-500"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono text-slate-500">
+                  {formatTime(sharePodcastCurrentTime)}
+                </span>
+                <button
+                  onClick={toggleSharePodcast}
+                  className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center hover:scale-105 transition-transform shadow-lg"
+                >
+                  {isPlayingSharePodcast ? (
+                    <Pause className="w-5 h-5 text-white" />
+                  ) : (
+                    <Play className="w-5 h-5 text-white ml-0.5" />
+                  )}
+                </button>
+                <span className="text-[10px] font-mono text-slate-500">
+                  {formatTime(sharePodcastDuration)}
+                </span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* 我的语音点评 */}
+        {/* 我的语音点评 - 播放器样式 */}
         <div className="p-4 border-b border-slate-700/50">
           <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">我的语音点评</p>
-          <div className="flex items-center space-x-3 p-3 bg-slate-700/30 rounded-xl">
-            <button
-              onClick={toggleShareVoice}
-              className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center shrink-0 hover:scale-105 transition-transform"
-            >
-              {isPlayingShareVoice ? (
-                <Pause className="w-5 h-5 text-white" />
-              ) : (
-                <Play className="w-5 h-5 text-white ml-0.5" />
-              )}
-            </button>
-            <div className="flex-1 min-w-0">
-              <p className="text-white font-medium text-sm">语音留言</p>
-              <p className="text-xs text-slate-400 mt-1">
-                时长 {pendingShareNote?.voiceDuration || 0} 秒
-              </p>
+          <div className="p-3 bg-slate-700/30 rounded-xl">
+            <div className="flex items-center space-x-3 mb-3">
+              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center shrink-0">
+                <Mic className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-medium text-sm">语音留言</p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  时长 {pendingShareNote?.voiceDuration || 0} 秒
+                </p>
+              </div>
             </div>
-            <Mic className="w-5 h-5 text-orange-400" />
+            {/* 语音进度条 */}
+            <div className="space-y-2">
+              <input
+                type="range"
+                value={shareVoiceProgress}
+                onChange={handleShareVoiceSeek}
+                className="w-full h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-orange-500"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono text-slate-500">
+                  {formatTime(shareVoiceCurrentTime)}
+                </span>
+                <button
+                  onClick={toggleShareVoice}
+                  className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center hover:scale-105 transition-transform shadow-lg"
+                >
+                  {isPlayingShareVoice ? (
+                    <Pause className="w-5 h-5 text-white" />
+                  ) : (
+                    <Play className="w-5 h-5 text-white ml-0.5" />
+                  )}
+                </button>
+                <span className="text-[10px] font-mono text-slate-500">
+                  {formatTime(pendingShareNote?.voiceDuration || 0)}
+                </span>
+              </div>
+            </div>
           </div>
-          
+
           {/* 识别文字 */}
           <div className="mt-3 p-3 bg-slate-900/50 rounded-xl">
             <p className="text-xs text-slate-500 mb-1">语音识别</p>
