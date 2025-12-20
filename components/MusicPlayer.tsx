@@ -36,6 +36,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   });
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [volume, setVolume] = useState(70);
   const [showDanceParty, setShowDanceParty] = useState(false);
   const [dancers, setDancers] = useState<DancerState[]>([]);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -43,6 +44,13 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   const danceTimerRefs = useRef<(number | null)[]>([]);
 
   const currentPodcast = history[currentIndex];
+
+  // 音量控制
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume / 100;
+    }
+  }, [volume]);
 
   // 自动播放
   useEffect(() => {
@@ -414,9 +422,14 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
             <div className="hidden md:flex items-center space-x-4"> 
               <div className="flex items-center text-slate-500 group"> 
                 <Volume2 className="w-5 h-5 mr-3 group-hover:text-pink-500 transition-colors" /> 
-                <div className="w-24 h-1 bg-slate-700 rounded-full relative overflow-hidden"> 
-                   <div className="absolute inset-0 bg-pink-500 w-[70%]" /> 
-                </div> 
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="100" 
+                  value={volume} 
+                  onChange={(e) => setVolume(parseInt(e.target.value))} 
+                  className="w-24 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-pink-500 hover:accent-pink-400 transition-all" 
+                /> 
               </div> 
             </div> 
           </div> 

@@ -178,7 +178,7 @@ const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, 
           
           {/* Visual Stage (Standard) */}
           {audioUrl && (
-              <div className="flex justify-center items-end space-x-8 md:space-x-24 h-64 bg-slate-900/80 rounded-lg p-8 mb-6 border border-slate-700/50 relative overflow-hidden shadow-inner">
+              <div className="flex justify-center items-center space-x-8 md:space-x-24 h-64 bg-slate-900/80 rounded-lg p-8 mb-6 border border-slate-700/50 relative overflow-hidden shadow-inner">
                   {/* Spotlight Effect */}
                   <div className="absolute top-0 left-1/4 w-32 h-32 bg-pink-500/10 blur-[50px] rounded-full pointer-events-none" />
                   <div className="absolute top-0 right-1/4 w-32 h-32 bg-blue-500/10 blur-[50px] rounded-full pointer-events-none" />
