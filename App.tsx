@@ -392,9 +392,10 @@ const App: React.FC = () => {
                     <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700/50 text-xs text-slate-400 space-y-2">
                         <p className="font-semibold text-slate-300">Technology Stack:</p>
                         <ul className="list-disc pl-4 space-y-1">
-                            <li>Spider: Simulated (ID based)</li>
-                            <li>Script: Aliyun Bailian</li>
+                            {/* <li></li> */}
+                            <li>Script: Aliyun Bailian - Qwen-3-flash</li>
                             <li>Synthesis: MiniMax</li>
+                            <li>Clone: MiniMax</li>
                         </ul>
                     </div>
                 </div>
