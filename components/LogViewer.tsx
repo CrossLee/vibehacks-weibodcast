@@ -39,7 +39,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs, isExpanded = true }) => {
       <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <Terminal className="w-4 h-4 text-slate-400" />
-          <span className="text-xs font-mono text-slate-400">WEIBO_SPIDER_PROCESS_LOG</span>
+          <span className="text-xs font-mono text-slate-400">PROCESS_LOG</span>
         </div>
         <div className="flex space-x-1.5">
           <div className="w-2.5 h-2.5 rounded-full bg-red-500/50"></div>

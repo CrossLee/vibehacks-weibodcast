@@ -16,8 +16,11 @@ import {
 
 interface DancerState { 
   id: number; 
-  x: number; 
-  jumpKey: number; // 用 key 触发动画而不是 boolean
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
 }
 
 interface MusicPlayerProps {
@@ -39,6 +42,17 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   const [dancers, setDancers] = useState<DancerState[]>([]);
   const audioRef = useRef<HTMLAudioElement>(null);
   const hasAutoPlayed = useRef(false);
+  const animationRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const gravityTimerRef = useRef<number | null>(null);
+  const gravityEnabledRef = useRef(false); // 用 ref 避免闭包问题
+
+  // 物理参数
+  const PHYSICS = {
+    gravity: 0.5,
+    bounceDamping: 0.85,
+    friction: 0.995,
+  };
 
   // 生成固定的撒花数据，不会因为 state 更新而重新渲染
   const confettiPieces = useMemo(() => {
@@ -89,18 +103,110 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     }
   }, [currentIndex, currentPodcast?.audioUrl]);
 
-  // 舞蹈动画逻辑
+  // 舞蹈动画逻辑 - 物理弹力球
   useEffect(() => {
     if (showDanceParty) {
-      // 初始化 5 个舞者，固定水平位置
-      const initialDancers = Array.from({ length: 5 }, (_, i) => ({
+      // 初始化 10 个舞者，随机位置和速度（初始速度更大，让它们先飞起来）
+      const initialDancers = Array.from({ length: 10 }, (_, i) => ({
         id: i,
-        x: 10 + i * 20,
-        jumpKey: Date.now() + i, // 初始跳跃
+        x: 100 + Math.random() * 600,
+        y: 200 + Math.random() * 200,
+        vx: (Math.random() - 0.5) * 15,
+        vy: -8 - Math.random() * 8, // 初始向上的速度
+        size: 180 + Math.random() * 80,
       }));
       setDancers(initialDancers);
+      gravityEnabledRef.current = false;
+
+      // 3秒后启用重力，让图片陆续落下
+      gravityTimerRef.current = window.setTimeout(() => {
+        gravityEnabledRef.current = true;
+      }, 3000);
+    } else {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+      if (gravityTimerRef.current) {
+        clearTimeout(gravityTimerRef.current);
+      }
+      gravityEnabledRef.current = false;
     }
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+      if (gravityTimerRef.current) {
+        clearTimeout(gravityTimerRef.current);
+      }
+    };
   }, [showDanceParty]);
+
+  // 物理动画循环
+  useEffect(() => {
+    if (!showDanceParty || dancers.length === 0) return;
+
+    const animate = () => {
+      const container = containerRef.current;
+      if (!container) {
+        animationRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      const rect = container.getBoundingClientRect();
+
+      setDancers(prevDancers => 
+        prevDancers.map(dancer => {
+          let { x, y, vx, vy, size } = dancer;
+
+          // 只有启用重力后才应用重力
+          if (gravityEnabledRef.current) {
+            vy += PHYSICS.gravity;
+          }
+
+          // 应用摩擦力
+          vx *= PHYSICS.friction;
+          vy *= PHYSICS.friction;
+
+          // 更新位置
+          x += vx;
+          y += vy;
+
+          const halfSize = size / 2;
+
+          // 边界碰撞检测
+          if (x < halfSize) {
+            x = halfSize;
+            vx = -vx * PHYSICS.bounceDamping;
+          } else if (x > rect.width - halfSize) {
+            x = rect.width - halfSize;
+            vx = -vx * PHYSICS.bounceDamping;
+          }
+
+          if (y < halfSize) {
+            y = halfSize;
+            vy = -vy * PHYSICS.bounceDamping;
+          } else if (y > rect.height - halfSize - 60) { // 底部留空间给标题
+            y = rect.height - halfSize - 60;
+            vy = -vy * PHYSICS.bounceDamping;
+            vx *= 0.95; // 底部额外摩擦
+          }
+
+          return { ...dancer, x, y, vx, vy };
+        })
+      );
+
+      animationRef.current = requestAnimationFrame(animate);
+    };
+
+    animationRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [showDanceParty, dancers.length]);
 
   const openDanceParty = () => {
     if (currentPodcast?.guestName && currentPodcast.guestName !== 'Guest') {
@@ -111,12 +217,19 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   const closeDanceParty = () => {
     setShowDanceParty(false);
     setDancers([]);
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+    }
   };
 
-  // 点击舞者触发跳跃 - 通过更新 key 来重新触发动画
+  // 点击舞者给一个向上的力
   const handleDancerClick = (id: number) => {
     setDancers(prev => prev.map(d => 
-      d.id === id ? { ...d, jumpKey: Date.now() } : d
+      d.id === id ? { 
+        ...d, 
+        vy: -12 - Math.random() * 5,
+        vx: (Math.random() - 0.5) * 10
+      } : d
     ));
   };
 
@@ -159,7 +272,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
 
   // 全屏舞蹈派对组件
   const DancePartyOverlay = () => (
-    <div className="fixed inset-0 z-[100] bg-slate-900 overflow-hidden">
+    <div ref={containerRef} className="fixed inset-0 z-[100] bg-slate-900 overflow-hidden">
       <button 
         onClick={(e) => {
           e.stopPropagation();
@@ -184,7 +297,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
           style={{
             left: `${piece.x}%`,
             top: '-20px',
-            zIndex: 60,
+            zIndex: 150,
             animation: `confetti-fall ${piece.duration}s linear ${piece.delay}s infinite`,
           }}
         >
@@ -200,33 +313,31 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
         </div>
       ))}
       
-      {/* Ground line */}
-      <div className="absolute bottom-24 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-pink-500/30 to-transparent z-[5]" />
-      
-      {/* Dancers - 固定在底部，点击跳跃 */}
-      {guestImageUrl && dancers.map((dancer, idx) => (
+      {/* Dancers - 物理弹力球效果 */}
+      {guestImageUrl && dancers.map((dancer) => (
         <div
           key={dancer.id}
-          className="absolute cursor-pointer"
+          className="absolute cursor-pointer transition-shadow hover:shadow-[0_0_30px_rgba(236,72,153,0.5)]"
           style={{
-            left: `${dancer.x}%`,
-            bottom: '100px',
-            transform: 'translateX(-50%)',
+            left: dancer.x,
+            top: dancer.y,
+            width: dancer.size,
+            height: dancer.size,
+            transform: 'translate(-50%, -50%)',
             zIndex: 50
           }}
           onClick={() => handleDancerClick(dancer.id)}
         >
-          <div 
-            key={dancer.jumpKey}
-            className="animate-jump-bounce"
-            style={{ animationDelay: `${idx * 0.15}s` }}
-          >
-            <img
-              src={guestImageUrl}
-              alt={`Dancer ${idx}`}
-              className="w-28 h-28 md:w-36 md:h-36 rounded-2xl shadow-2xl border-2 border-white/20 object-cover hover:scale-110 transition-transform"
-            />
-          </div>
+          <img
+            src={guestImageUrl}
+            alt={`Dancer ${dancer.id}`}
+            className="w-full h-full rounded-2xl shadow-2xl border-2 border-white/20 object-cover"
+            style={{
+              boxShadow: `0 0 20px rgba(255, 255, 255, 0.3),
+                         inset 0 8px 20px rgba(255, 255, 255, 0.2),
+                         inset 0 -8px 20px rgba(0, 0, 0, 0.3)`
+            }}
+          />
         </div>
       ))}
       
@@ -236,25 +347,12 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
       </div>
     
       {/* Title */}
-      <div className="absolute bottom-8 left-0 right-0 text-center z-[100]">
+      <div className="absolute bottom-4 left-0 right-0 text-center z-[100]">
         <h2 className="text-2xl font-bold text-white">{currentPodcast?.title}</h2>
-        <p className="text-slate-400 mt-2">🎉 点击图片让 {currentPodcast?.guestName} 跳起来！🎉</p>
+        <p className="text-slate-400 mt-2">🎉 点击图片让 {currentPodcast?.guestName} 弹跳！🎉</p>
       </div>
       
       <style>{`
-        @keyframes jump-bounce {
-          0% { transform: translateY(0) rotate(0deg); }
-          15% { transform: translateY(-80px) rotate(-5deg); }
-          30% { transform: translateY(-120px) rotate(5deg); }
-          45% { transform: translateY(-80px) rotate(-3deg); }
-          60% { transform: translateY(-40px) rotate(3deg); }
-          75% { transform: translateY(-20px) rotate(-2deg); }
-          90% { transform: translateY(-5px) rotate(1deg); }
-          100% { transform: translateY(0) rotate(0deg); }
-        }
-        .animate-jump-bounce {
-          animation: jump-bounce 1.5s ease-out;
-        }
         @keyframes confetti-fall {
           0% { transform: translateY(0) rotate(0deg); opacity: 1; }
           100% { transform: translateY(100vh) rotate(720deg); opacity: 0.8; }
