@@ -96,13 +96,15 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   // 蓝牙眼镜状态
   const [isGlassesConnected, setIsGlassesConnected] = useState(false);
   const [showGlassesModal, setShowGlassesModal] = useState(false);
-  const [glassesRecording, setGlassesRecording] = useState(true);
+  const [glassesRecording, setGlassesRecording] = useState(false);
+  const glassesRecordingRef = useRef(false); // 用于闭包中访问最新状态
   const [glassesAudioTime, setGlassesAudioTime] = useState(0);
   const [glassesWaveform, setGlassesWaveform] = useState<number[]>(new Array(12).fill(0));
   const [glassesRecordingDuration, setGlassesRecordingDuration] = useState(0);
   const [glassesTranscript, setGlassesTranscript] = useState('');
   const [glassesShowHighlight, setGlassesShowHighlight] = useState(false);
   const [glassesRecognitionState, setGlassesRecognitionState] = useState('待命');
+  const [glassesShowContent, setGlassesShowContent] = useState(false); // 控制左镜片内容显示
   const glassesWaveformRef = useRef<number | null>(null);
   const glassesTimerRef = useRef<number | null>(null);
   const glassesMediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -607,10 +609,9 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     }
   };
 
-  // 蓝牙眼镜连接
-  const handleGlassesConnect = async () => {
+  // 蓝牙眼镜连接 - 只打开弹窗，不自动开始录音
+  const handleGlassesConnect = () => {
     if (!isGlassesConnected) {
-      // 模拟连接
       setIsGlassesConnected(true);
     }
     // 暂停播客播放
@@ -619,21 +620,20 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
       setIsPlaying(false);
       setGlassesAudioTime(audioRef.current.currentTime);
     }
-    // 打开眼镜弹窗
+    // 打开眼镜弹窗，重置状态
     setShowGlassesModal(true);
-    setGlassesRecording(true);
+    setGlassesRecording(false);
+    glassesRecordingRef.current = false;
     setGlassesRecordingDuration(0);
     setGlassesTranscript('');
     setGlassesShowHighlight(false);
+    setGlassesShowContent(false); // 初始不显示左镜片内容
     setGlassesRecognitionState('待命');
-    // 开始模拟波形动画
-    startGlassesWaveform();
-    // 开始计时
-    glassesTimerRef.current = window.setInterval(() => {
-      setGlassesRecordingDuration(prev => prev + 1);
-    }, 1000);
+    setGlassesWaveform(new Array(12).fill(0));
+  };
 
-    // 开始实际录音
+  // 开始眼镜录音
+  const startGlassesRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       glassesMediaRecorderRef.current = new MediaRecorder(stream);
@@ -647,10 +647,24 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
 
       glassesMediaRecorderRef.current.start(100);
       
+      // 更新状态
+      setGlassesRecording(true);
+      glassesRecordingRef.current = true;
+      setGlassesRecordingDuration(0);
+      
+      // 开始波形动画
+      startGlassesWaveform();
+      
+      // 开始计时
+      glassesTimerRef.current = window.setInterval(() => {
+        setGlassesRecordingDuration(prev => prev + 1);
+      }, 1000);
+      
       // 开始语音识别
       startGlassesSpeechRecognition();
     } catch (err) {
       console.error('Failed to start glasses recording:', err);
+      alert('无法访问麦克风，请检查权限设置');
     }
   };
 
@@ -684,12 +698,25 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
       if (interim) {
         setGlassesTranscript(interim);
         setGlassesRecognitionState('识别中...');
+        // 在中间结果中也检测关键词
+        const isHighlight =
+          interim.includes('很有道理') ||
+          interim.includes('有道理') ||
+          interim.includes('说得对') ||
+          interim.includes('道理');
+        if (isHighlight && !glassesShowHighlight) {
+          console.log('Interim highlight detected:', interim);
+          setGlassesShowHighlight(true);
+          setTimeout(() => {
+            setGlassesShowHighlight(false);
+          }, 5000);
+        }
       }
     };
 
     glassesRecognitionRef.current.onend = () => {
       // 如果还在录音，重新开始识别
-      if (glassesRecording) {
+      if (glassesRecordingRef.current) {
         glassesRecognitionRef.current?.start();
       }
     };
@@ -726,16 +753,6 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     }, 1000);
   };
 
-  // 手动触发高亮效果（用于测试）
-  const triggerGlassesHighlight = () => {
-    console.log('Manual trigger highlight');
-    setGlassesShowHighlight(true);
-    setGlassesTranscript('很有道理');
-    setTimeout(() => {
-      setGlassesShowHighlight(false);
-    }, 5000);
-  };
-
   // 模拟眼镜波形动画
   const startGlassesWaveform = () => {
     const animate = () => {
@@ -750,6 +767,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   // 眼镜端完成录音
   const handleGlassesFinish = () => {
     setGlassesRecording(false);
+    glassesRecordingRef.current = false;
     // 停止波形动画
     if (glassesWaveformRef.current) {
       clearTimeout(glassesWaveformRef.current);
@@ -758,6 +776,14 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     if (glassesTimerRef.current) {
       clearInterval(glassesTimerRef.current);
     }
+    // 停止语音识别
+    if (glassesRecognitionRef.current) {
+      glassesRecognitionRef.current.stop();
+    }
+    
+    // 显示左镜片内容
+    setGlassesShowContent(true);
+    setGlassesRecognitionState('已完成');
     
     // 停止录音并保存
     if (glassesMediaRecorderRef.current) {
@@ -783,11 +809,9 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
             voiceDuration: glassesRecordingDuration
           };
           setLocalInterruptNotes(prev => [note, ...prev]);
-          setSidebarTab('interaction');
         }
         
-        // 关闭弹窗
-        setShowGlassesModal(false);
+        // 不关闭弹窗，保持显示
         setGlassesWaveform(new Array(12).fill(0));
       }, 100);
     } else {
@@ -804,13 +828,9 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
           voiceDuration: glassesRecordingDuration
         };
         setLocalInterruptNotes(prev => [note, ...prev]);
-        setSidebarTab('interaction');
       }
-      // 关闭弹窗
-      setTimeout(() => {
-        setShowGlassesModal(false);
-        setGlassesWaveform(new Array(12).fill(0));
-      }, 500);
+      // 不关闭弹窗
+      setGlassesWaveform(new Array(12).fill(0));
     }
   };
 
@@ -818,6 +838,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   const handleCloseGlassesModal = () => {
     setShowGlassesModal(false);
     setGlassesRecording(false);
+    glassesRecordingRef.current = false;
     if (glassesWaveformRef.current) {
       clearTimeout(glassesWaveformRef.current);
     }
@@ -1295,8 +1316,13 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     >
       {/* 关闭按钮 */}
       <button
-        onClick={handleCloseGlassesModal}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleCloseGlassesModal();
+        }}
         className="absolute top-5 right-5 text-slate-500 hover:text-slate-800 transition-colors p-3 z-[200] bg-white/70 backdrop-blur-sm rounded-full cursor-pointer hover:bg-white shadow-lg"
+        type="button"
       >
         <X className="w-6 h-6" />
       </button>
@@ -1307,14 +1333,6 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
         <span className="text-sm font-medium">智能眼镜已连接</span>
         <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
       </div>
-
-      {/* 测试按钮 - 手动触发高亮 */}
-      <button
-        onClick={triggerGlassesHighlight}
-        className="absolute top-5 left-1/2 -translate-x-1/2 text-slate-600 bg-white/50 backdrop-blur-sm px-4 py-2 rounded-full text-sm hover:bg-white/70 transition-colors z-[150] cursor-pointer"
-      >
-        测试：模拟说"很有道理"
-      </button>
 
       {/* 眼镜主体 */}
       <div className="glasses-wrapper flex items-center justify-center w-full max-w-[1100px]"
@@ -1335,16 +1353,16 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
               transform: 'perspective(600px) rotateY(3deg)'
             }}
           >
-            {/* HUD 层 - 左镜片 */}
-            <div className={`absolute inset-0 p-6 transition-all duration-400 ${glassesShowHighlight ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-              {/* 媒体/播客封面 - 只在检测到关键词时显示 */}
-              <div className={`absolute top-8 left-6 w-32 h-32 transition-all duration-500 ${glassesShowHighlight ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-5'}`}>
+            {/* HUD 层 - 左镜片：只在说完后显示内容 */}
+            <div className={`absolute inset-0 p-6 transition-all duration-500 ${glassesShowContent ? 'opacity-100' : 'opacity-0'}`}>
+              {/* 媒体/播客封面 */}
+              <div className={`absolute top-8 left-6 w-32 h-32 transition-all duration-500 ${glassesShowHighlight ? 'ring-4 ring-cyan-400 rounded-xl' : ''}`}>
                 {currentPodcast?.guestName && currentPodcast.guestName !== 'Guest' ? (
                   <img
                     src={`/image/${encodeURIComponent(currentPodcast.guestName)}.gif`}
                     alt={currentPodcast.guestName}
-                    className="w-full h-full object-contain"
-                    style={{ filter: 'drop-shadow(0 0 10px rgba(0, 242, 255, 0.3))' }}
+                    className="w-full h-full object-contain rounded-xl"
+                    style={{ filter: glassesShowHighlight ? 'drop-shadow(0 0 15px rgba(0, 242, 255, 0.5))' : 'none' }}
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';
                     }}
@@ -1356,14 +1374,14 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
                 )}
               </div>
 
-              {/* 状态标签 - 只在检测到关键词时显示 */}
-              <div className={`absolute bottom-6 left-6 flex flex-col gap-0.5 transition-all duration-500 ${glassesShowHighlight ? 'opacity-100' : 'opacity-0'}`}>
+              {/* 状态标签 */}
+              <div className={`absolute bottom-6 left-6 flex flex-col gap-0.5 transition-all duration-500 ${glassesShowHighlight ? 'opacity-100' : 'opacity-60'}`}>
                 <span className="text-[10px] text-white/50 tracking-[2.5px] uppercase font-semibold">
-                  智能语境分析 @
+                  {glassesShowHighlight ? '✨ 高光时刻' : '播客时间'}
                 </span>
                 <span 
                   className="text-2xl font-light font-mono"
-                  style={{ color: '#00f2ff', textShadow: '0 0 15px rgba(0, 242, 255, 0.4)' }}
+                  style={{ color: glassesShowHighlight ? '#00f2ff' : '#ffffff80', textShadow: glassesShowHighlight ? '0 0 15px rgba(0, 242, 255, 0.4)' : 'none' }}
                 >
                   {formatTime(glassesAudioTime)}
                 </span>
@@ -1406,72 +1424,84 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
                 <p className="text-white/40 text-xs mt-1">By Weibodcast AI</p>
               </div>
 
+              {/* 语音识别文字 */}
+              {glassesTranscript && (
+                <div className="absolute top-24 left-6 right-6">
+                  <p className="text-cyan-400 text-sm">{glassesTranscript}</p>
+                </div>
+              )}
+
               {/* 状态显示 */}
               <div className="absolute bottom-8 right-6 text-right">
                 <span className="text-[10px] text-white/50 tracking-[2.5px] uppercase">
                   {glassesRecognitionState}
                 </span>
               </div>
-
-              {/* 完成按钮 */}
-              {glassesRecording && (
-                <div className="absolute bottom-8 left-6">
-                  <button
-                    onClick={handleGlassesFinish}
-                    className="px-4 py-2 rounded-full text-sm font-medium transition-all hover:scale-105"
-                    style={{
-                      background: 'rgba(0, 242, 255, 0.2)',
-                      border: '1px solid rgba(0, 242, 255, 0.5)',
-                      color: '#00f2ff',
-                      boxShadow: '0 0 20px rgba(0, 242, 255, 0.3)'
-                    }}
-                  >
-                    <span className="flex items-center space-x-2">
-                      <Check className="w-4 h-4" />
-                      <span>说完了</span>
-                    </span>
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* 底部语音识别文字 */}
-      <div className="absolute bottom-24 left-1/2 -translate-x-1/2 text-center">
-        <span className={`text-sm text-slate-600 transition-opacity ${glassesTranscript ? 'opacity-100' : 'opacity-0'}`}>
-          {glassesTranscript}
-        </span>
-      </div>
+      {/* 底部控制区域 */}
+      <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center space-y-4">
+        {/* 波形图 - 只在录音时显示 */}
+        {glassesRecording && (
+          <div className="flex items-center justify-center h-8 space-x-1">
+            {glassesWaveform.map((level, i) => (
+              <div
+                key={i}
+                className={`w-1.5 rounded-full transition-all duration-75 ${glassesShowHighlight ? 'bg-cyan-500' : 'bg-purple-500'}`}
+                style={{ height: `${level * 24}px` }}
+              />
+            ))}
+          </div>
+        )}
 
-      {/* 底部波形和文字 */}
-      <div className="absolute bottom-14 left-1/2 -translate-x-1/2 flex flex-col items-center">
-        {/* 波形图 */}
-        <div className={`flex items-center justify-center h-5 space-x-0.5 transition-all ${glassesShowHighlight ? 'opacity-100' : 'opacity-30'}`}>
-          {glassesWaveform.map((level, i) => (
-            <div
-              key={i}
-              className={`w-1 rounded-full transition-all duration-75 ${glassesShowHighlight ? 'bg-cyan-500' : 'bg-slate-500'}`}
-              style={{ 
-                height: `${glassesRecording ? level * 16 : 4}px`,
-              }}
-            />
-          ))}
-        </div>
-        
+        {/* 录音时长 */}
+        {glassesRecording && (
+          <span className="text-sm text-slate-600 font-mono">
+            {Math.floor(glassesRecordingDuration / 60).toString().padStart(2, '0')}:
+            {(glassesRecordingDuration % 60).toString().padStart(2, '0')}
+          </span>
+        )}
+
+        {/* 主按钮 */}
+        {!glassesRecording ? (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              startGlassesRecording();
+            }}
+            className="px-8 py-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full text-lg font-medium shadow-lg hover:from-purple-400 hover:to-pink-400 transition-all hover:scale-105 cursor-pointer"
+            type="button"
+          >
+            <span className="flex items-center space-x-2">
+              <Mic className="w-5 h-5" />
+              <span>开始说话</span>
+            </span>
+          </button>
+        ) : (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleGlassesFinish();
+            }}
+            className="px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-full text-lg font-medium shadow-lg hover:from-cyan-400 hover:to-blue-400 transition-all hover:scale-105 cursor-pointer"
+            type="button"
+          >
+            <span className="flex items-center space-x-2">
+              <Check className="w-5 h-5" />
+              <span>我说完了</span>
+            </span>
+          </button>
+        )}
+
         {/* 提示文字 */}
-        <p className="text-[9px] text-slate-400/50 tracking-[2px] uppercase mt-4">
-          试着说："很有道理"
+        <p className="text-xs text-slate-400">
+          {glassesRecording ? '试着说："很有道理" 触发高光效果' : '点击按钮开始语音互动'}
         </p>
-      </div>
-
-      {/* 录音时长显示 */}
-      <div className="absolute bottom-5 left-1/2 -translate-x-1/2">
-        <span className={`text-sm text-slate-500 transition-opacity ${glassesRecording ? 'opacity-100' : 'opacity-0'}`}>
-          {Math.floor(glassesRecordingDuration / 60).toString().padStart(2, '0')}:
-          {(glassesRecordingDuration % 60).toString().padStart(2, '0')}
-        </span>
       </div>
     </div>
   );
