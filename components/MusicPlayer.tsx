@@ -18,7 +18,9 @@ import {
   MessageCircle,
   Trash2,
   Mic,
-  Square
+  Square,
+  Share2,
+  Download
 } from 'lucide-react';
 
 interface DancerState { 
@@ -60,6 +62,14 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   const [audioLevels, setAudioLevels] = useState<number[]>(new Array(20).fill(0));
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [playingNoteId, setPlayingNoteId] = useState<string | null>(null);
+  // 分享卡片状态
+  const [showShareCard, setShowShareCard] = useState(false);
+  const [pendingShareNote, setPendingShareNote] = useState<InterruptNote | null>(null);
+  const [transcribedText, setTranscribedText] = useState('');
+  const [isPlayingSharePodcast, setIsPlayingSharePodcast] = useState(false);
+  const [isPlayingShareVoice, setIsPlayingShareVoice] = useState(false);
+  const shareAudioRef = useRef<HTMLAudioElement | null>(null);
+  const shareVoiceRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -411,11 +421,103 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
         voiceDuration: recordingDuration
       };
       
-      setLocalInterruptNotes(prev => [note, ...prev]);
+      // 显示分享卡片而不是直接保存
+      setPendingShareNote(note);
+      setTranscribedText('正在识别语音内容...');
       setShowVoiceBubble(false);
-      setSidebarTab('interaction');
+      setShowShareCard(true);
       setAudioLevels(new Array(20).fill(0));
+      
+      // 模拟语音识别（实际项目中需要调用语音识别API）
+      setTimeout(() => {
+        setTranscribedText('（语音内容识别中，此功能需要接入语音识别服务）');
+      }, 1500);
     }, 100);
+  };
+
+  // 确认分享并保存
+  const handleConfirmShare = () => {
+    if (pendingShareNote) {
+      setLocalInterruptNotes(prev => [pendingShareNote, ...prev]);
+      setSidebarTab('interaction');
+    }
+    handleCloseShareCard();
+  };
+
+  // 关闭分享卡片
+  const handleCloseShareCard = () => {
+    setShowShareCard(false);
+    setPendingShareNote(null);
+    setTranscribedText('');
+    setIsPlayingSharePodcast(false);
+    setIsPlayingShareVoice(false);
+    if (shareAudioRef.current) {
+      shareAudioRef.current.pause();
+      shareAudioRef.current = null;
+    }
+    if (shareVoiceRef.current) {
+      shareVoiceRef.current.pause();
+      shareVoiceRef.current = null;
+    }
+  };
+
+  // 播放分享卡片中的播客片段
+  const toggleSharePodcast = () => {
+    if (!currentPodcast?.audioUrl) return;
+    
+    if (isPlayingSharePodcast) {
+      shareAudioRef.current?.pause();
+      setIsPlayingSharePodcast(false);
+    } else {
+      if (!shareAudioRef.current) {
+        shareAudioRef.current = new Audio(currentPodcast.audioUrl);
+        shareAudioRef.current.onended = () => setIsPlayingSharePodcast(false);
+      }
+      if (pendingShareNote) {
+        shareAudioRef.current.currentTime = Math.max(0, pendingShareNote.audioTime - 5);
+      }
+      shareAudioRef.current.play();
+      setIsPlayingSharePodcast(true);
+    }
+  };
+
+  // 播放分享卡片中的语音评论
+  const toggleShareVoice = () => {
+    if (!pendingShareNote?.voiceUrl) return;
+    
+    if (isPlayingShareVoice) {
+      shareVoiceRef.current?.pause();
+      setIsPlayingShareVoice(false);
+    } else {
+      if (!shareVoiceRef.current) {
+        shareVoiceRef.current = new Audio(pendingShareNote.voiceUrl);
+        shareVoiceRef.current.onended = () => setIsPlayingShareVoice(false);
+      }
+      shareVoiceRef.current.play();
+      setIsPlayingShareVoice(true);
+    }
+  };
+
+  // 分享到社交媒体
+  const handleShare = (platform: string) => {
+    const shareText = `我在听「${currentPodcast?.title}」时留下了语音点评！`;
+    const shareUrl = window.location.href;
+    
+    switch (platform) {
+      case 'wechat':
+        alert('请截图分享到微信');
+        break;
+      case 'weibo':
+        window.open(`https://service.weibo.com/share/share.php?title=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`, '_blank');
+        break;
+      case 'twitter':
+        window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`, '_blank');
+        break;
+      case 'copy':
+        navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
+        alert('链接已复制到剪贴板');
+        break;
+    }
   };
 
   // 关闭语音气泡
@@ -471,6 +573,12 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
       }
       if (noteAudioRef.current) {
         noteAudioRef.current.pause();
+      }
+      if (shareAudioRef.current) {
+        shareAudioRef.current.pause();
+      }
+      if (shareVoiceRef.current) {
+        shareVoiceRef.current.pause();
       }
     };
   }, []);
@@ -613,6 +721,140 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     </div>
   );
 
+  // 分享卡片组件
+  const ShareCard = () => (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+      <div className="w-[400px] bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl shadow-2xl border border-slate-600 overflow-hidden">
+        {/* 头部 */}
+        <div className="p-4 bg-gradient-to-r from-orange-500/20 to-red-500/20 border-b border-slate-700">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Share2 className="w-5 h-5 text-orange-400" />
+              <span className="text-white font-medium">分享语音点评</span>
+            </div>
+            <button
+              onClick={handleCloseShareCard}
+              className="text-slate-400 hover:text-white transition-colors p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* 原播客内容 */}
+        <div className="p-4 border-b border-slate-700/50">
+          <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">原播客片段</p>
+          <div className="flex items-center space-x-3 p-3 bg-slate-700/30 rounded-xl">
+            <button
+              onClick={toggleSharePodcast}
+              className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shrink-0 hover:scale-105 transition-transform"
+            >
+              {isPlayingSharePodcast ? (
+                <Pause className="w-5 h-5 text-white" />
+              ) : (
+                <Play className="w-5 h-5 text-white ml-0.5" />
+              )}
+            </button>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-medium text-sm truncate">{currentPodcast?.title}</p>
+              <p className="text-xs text-slate-400 mt-1">
+                从 {formatTime(pendingShareNote?.audioTime || 0)} 开始
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 我的语音点评 */}
+        <div className="p-4 border-b border-slate-700/50">
+          <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">我的语音点评</p>
+          <div className="flex items-center space-x-3 p-3 bg-slate-700/30 rounded-xl">
+            <button
+              onClick={toggleShareVoice}
+              className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center shrink-0 hover:scale-105 transition-transform"
+            >
+              {isPlayingShareVoice ? (
+                <Pause className="w-5 h-5 text-white" />
+              ) : (
+                <Play className="w-5 h-5 text-white ml-0.5" />
+              )}
+            </button>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-medium text-sm">语音留言</p>
+              <p className="text-xs text-slate-400 mt-1">
+                时长 {pendingShareNote?.voiceDuration || 0} 秒
+              </p>
+            </div>
+            <Mic className="w-5 h-5 text-orange-400" />
+          </div>
+          
+          {/* 识别文字 */}
+          <div className="mt-3 p-3 bg-slate-900/50 rounded-xl">
+            <p className="text-xs text-slate-500 mb-1">语音识别</p>
+            <p className="text-sm text-slate-300 leading-relaxed">{transcribedText}</p>
+          </div>
+        </div>
+
+        {/* 社交媒体分享 */}
+        <div className="p-4">
+          <p className="text-xs text-slate-500 mb-3 uppercase tracking-wider">分享到</p>
+          <div className="flex items-center justify-center space-x-4">
+            {/* 微信 */}
+            <button
+              onClick={() => handleShare('wechat')}
+              className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center hover:scale-110 transition-transform shadow-lg"
+              title="微信"
+            >
+              <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178A1.17 1.17 0 0 1 4.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178 1.17 1.17 0 0 1-1.162-1.178c0-.651.52-1.18 1.162-1.18zm5.34 2.867c-1.797-.052-3.746.512-5.28 1.786-1.72 1.428-2.687 3.72-1.78 6.22.942 2.453 3.666 4.229 6.884 4.229.826 0 1.622-.12 2.361-.336a.722.722 0 0 1 .598.082l1.584.926a.272.272 0 0 0 .14.047c.134 0 .24-.111.24-.247 0-.06-.023-.12-.038-.177l-.327-1.233a.582.582 0 0 1-.023-.156.49.49 0 0 1 .201-.398C23.024 18.48 24 16.82 24 14.98c0-3.21-2.931-5.837-6.656-6.088V8.89c-.135-.01-.269-.03-.407-.03zm-2.53 3.274c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.97-.982zm4.844 0c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.969-.982z"/>
+              </svg>
+            </button>
+            
+            {/* 微博 */}
+            <button
+              onClick={() => handleShare('weibo')}
+              className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center hover:scale-110 transition-transform shadow-lg"
+              title="微博"
+            >
+              <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M10.098 20.323c-3.977.391-7.414-1.406-7.672-4.02-.259-2.609 2.759-5.047 6.74-5.441 3.979-.394 7.413 1.404 7.671 4.018.259 2.6-2.759 5.049-6.737 5.439l-.002.004zM9.05 17.219c-.384.616-1.208.884-1.829.602-.612-.279-.793-.991-.406-1.593.379-.595 1.176-.861 1.793-.601.622.263.82.972.442 1.592zm1.27-1.627c-.141.237-.449.353-.689.253-.236-.09-.313-.361-.177-.586.138-.227.436-.346.672-.24.239.09.315.36.18.573h.014zm.176-2.719c-1.893-.493-4.033.45-4.857 2.118-.836 1.704-.026 3.591 1.886 4.21 1.983.64 4.318-.341 5.132-2.179.8-1.793-.201-3.642-2.161-4.149zm7.563-1.224c-.346-.105-.579-.18-.405-.649.381-1.017.42-1.894-.009-2.517-.789-1.14-2.962-.899-5.399-.025l.002-.002c0-.002-.576.199-.429-.201.288-.798.245-1.469-.156-1.858-1.043-1.013-3.813-.019-6.188 2.22-1.78 1.676-2.814 3.452-2.814 5.015 0 2.988 3.84 4.806 7.59 4.806 4.916 0 8.187-2.86 8.187-5.122 0-1.37-1.153-2.145-2.379-2.667zm3.461-6.106c-.853-1.062-2.109-1.46-3.418-1.184-.509.107-.835.601-.728 1.104.107.503.602.835 1.104.728.639-.135 1.252.059 1.665.577.413.519.519 1.186.283 1.785-.193.494.05 1.05.543 1.243.494.193 1.05-.05 1.243-.543.477-1.213.26-2.574-.692-3.71zm1.586-2.511c-1.533-1.908-3.789-2.621-6.143-2.125-.578.122-1.003.691-.881 1.269.122.578.691 1.003 1.269.881 1.636-.345 3.201.15 4.269 1.479 1.068 1.329 1.299 3.048.631 4.695-.218.539.04 1.152.579 1.37.539.218 1.152-.04 1.37-.579.965-2.381.631-4.876-.914-6.79l-.18-.2z"/>
+              </svg>
+            </button>
+            
+            {/* Twitter/X */}
+            <button
+              onClick={() => handleShare('twitter')}
+              className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center hover:scale-110 transition-transform shadow-lg border border-slate-600"
+              title="Twitter/X"
+            >
+              <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+            </button>
+            
+            {/* 复制链接 */}
+            <button
+              onClick={() => handleShare('copy')}
+              className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center hover:scale-110 transition-transform shadow-lg border border-slate-600"
+              title="复制链接"
+            >
+              <Download className="w-5 h-5 text-white" />
+            </button>
+          </div>
+        </div>
+
+        {/* 底部按钮 */}
+        <div className="p-4 bg-slate-800/50 border-t border-slate-700">
+          <button
+            onClick={handleConfirmShare}
+            className="w-full py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl font-medium hover:from-orange-400 hover:to-red-400 transition-all"
+          >
+            保存到互动记录
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   if (!currentPodcast) {
     return (
       <div className="flex flex-col items-center justify-center h-[600px] text-slate-500 bg-slate-900/50 rounded-2xl border border-slate-700/50 border-dashed">
@@ -625,6 +867,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   return (
     <>
     {showDanceParty && <DancePartyOverlay />}
+    {showShareCard && <ShareCard />}
     <div className="relative h-[600px] bg-slate-900 rounded-3xl overflow-hidden border border-slate-700 shadow-2xl flex flex-col md:flex-row animate-fade-in">
       {/* Background Blur Effect */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-30">
