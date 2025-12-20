@@ -307,17 +307,6 @@ const App: React.FC = () => {
                 Generator
              </button>
              <button
-                onClick={() => setView('voicelab')}
-                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                    view === 'voicelab' 
-                    ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow' 
-                    : 'text-slate-400 hover:text-white'
-                }`}
-             >
-                <Mic2 className="w-4 h-4 mr-2" />
-                Voice Lab
-             </button>
-             <button
                 onClick={() => setView('spider')}
                 className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all ${
                     view === 'spider' 
@@ -327,17 +316,6 @@ const App: React.FC = () => {
              >
                 <Bug className="w-4 h-4 mr-2" />
                 Spider Lab
-             </button>
-             <button
-                onClick={() => setView('imagelab')}
-                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                    view === 'imagelab' 
-                    ? 'bg-gradient-to-r from-yellow-600 to-orange-600 text-white shadow' 
-                    : 'text-slate-400 hover:text-white'
-                }`}
-             >
-                <Image className="w-4 h-4 mr-2" />
-                Image Lab
              </button>
              <button
                 onClick={() => setView('player')}
