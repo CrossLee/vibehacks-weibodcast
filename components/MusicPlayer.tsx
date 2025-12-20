@@ -10,8 +10,17 @@ import {
   Volume2, 
   Music2, 
   Calendar, 
-  ChevronRight 
+  ChevronRight,
+  X
 } from 'lucide-react';
+
+interface DancerState { 
+  id: number; 
+  x: number; 
+  y: number; 
+  rotation: number; 
+  scale: number; 
+}
 
 interface MusicPlayerProps {
   history: PodcastResult[];
@@ -27,8 +36,11 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   });
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [showDanceParty, setShowDanceParty] = useState(false);
+  const [dancers, setDancers] = useState<DancerState[]>([]);
   const audioRef = useRef<HTMLAudioElement>(null);
   const hasAutoPlayed = useRef(false);
+  const danceTimerRefs = useRef<(number | null)[]>([]);
 
   const currentPodcast = history[currentIndex];
 
@@ -58,6 +70,61 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
       }
     }
   }, [currentIndex, currentPodcast?.audioUrl]);
+
+  // 舞蹈动画逻辑
+  useEffect(() => {
+    if (showDanceParty) {
+      // 初始化 5 个舞者
+      const initialDancers = Array.from({ length: 5 }, (_, i) => ({
+        id: i,
+        x: 20 + Math.random() * 60,
+        y: 20 + Math.random() * 60,
+        rotation: (Math.random() - 0.5) * 40,
+        scale: 0.8 + Math.random() * 0.4
+      }));
+      setDancers(initialDancers);
+      danceTimerRefs.current = new Array(5).fill(null);
+
+      // 开始舞蹈
+      initialDancers.forEach((_, index) => {
+        const moveDancer = () => {
+          setDancers(prev => {
+            const next = [...prev];
+            if (next[index]) {
+              next[index] = {
+                ...next[index],
+                x: 15 + Math.random() * 70,
+                y: 15 + Math.random() * 70,
+                rotation: (Math.random() - 0.5) * 120,
+              };
+            }
+            return next;
+          });
+          danceTimerRefs.current[index] = window.setTimeout(moveDancer, 100 + Math.random() * 400);
+        };
+        moveDancer();
+      });
+    }
+
+    return () => {
+      danceTimerRefs.current.forEach(timer => {
+        if (timer) window.clearTimeout(timer);
+      });
+    };
+  }, [showDanceParty]);
+
+  const openDanceParty = () => {
+    if (currentPodcast?.guestName && currentPodcast.guestName !== 'Guest') {
+      setShowDanceParty(true);
+    }
+  };
+
+  const closeDanceParty = () => {
+    setShowDanceParty(false);
+    danceTimerRefs.current.forEach(timer => {
+      if (timer) window.clearTimeout(timer);
+    });
+  };
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -92,6 +159,79 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
     }
   };
 
+  const guestImageUrl = currentPodcast?.guestName && currentPodcast.guestName !== 'Guest' 
+    ? `/image/${encodeURIComponent(currentPodcast.guestName)}.gif` 
+    : null;
+
+  // 全屏舞蹈派对组件
+  const DancePartyOverlay = () => (
+    <div className="fixed inset-0 z-[100] bg-slate-900 flex flex-col">
+      <button 
+        onClick={(e) => {
+          e.stopPropagation();
+          closeDanceParty();
+        }}
+        className="absolute top-4 right-4 z-[200] p-3 bg-red-500 rounded-full hover:bg-red-400 text-white transition-all shadow-lg cursor-pointer"
+      >
+        <X className="w-6 h-6" />
+      </button>
+      
+      <div className="flex-1 relative overflow-hidden">
+        {/* Grid Background */}
+        <div className="absolute inset-0 opacity-10 pointer-events-none" style={{
+          backgroundImage: `radial-gradient(circle, #4b5563 1px, transparent 1px)`,
+          backgroundSize: '40px 40px'
+        }} />
+        
+        {/* Dancers */}
+        {guestImageUrl && dancers.map((dancer, idx) => (
+          <div
+            key={dancer.id}
+            className="absolute transition-all duration-300 ease-[cubic-bezier(0.175,0.885,0.32,1.275)]"
+            style={{
+              left: `${dancer.x}%`,
+              top: `${dancer.y}%`,
+              transform: `translate(-50%, -50%) rotate(${dancer.rotation}deg) scale(${dancer.scale})`,
+              zIndex: idx + 10
+            }}
+          >
+            <div className="animate-chaotic-bounce" style={{ animationDelay: `${idx * 0.12}s` }}>
+              <img
+                src={guestImageUrl}
+                alt={`Dancer ${idx}`}
+                className="w-32 h-32 md:w-40 md:h-40 rounded-2xl shadow-2xl border-2 border-white/20 object-cover"
+              />
+            </div>
+          </div>
+        ))}
+        
+        {/* Central Party Indicator */}
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+          <div className="w-[500px] h-[500px] bg-pink-500/5 rounded-full animate-ping opacity-20" />
+        </div>
+      </div>
+      
+      {/* Title */}
+      <div className="absolute bottom-8 left-0 right-0 text-center">
+        <h2 className="text-2xl font-bold text-white">{currentPodcast?.title}</h2>
+        <p className="text-slate-400 mt-2">🎉 {currentPodcast?.guestName} Dance Party 🎉</p>
+      </div>
+      
+      <style>{`
+        @keyframes chaotic-bounce {
+          0%, 100% { transform: scale(1, 1) translateY(0); }
+          15% { transform: scale(1.4, 0.6) translateY(15px); }
+          35% { transform: scale(0.6, 1.5) translateY(-50px); }
+          55% { transform: scale(1.2, 0.8) translateY(0); }
+          75% { transform: scale(0.8, 1.2) translateY(-20px); }
+        }
+        .animate-chaotic-bounce {
+          animation: chaotic-bounce 0.55s infinite ease-in-out;
+        }
+      `}</style>
+    </div>
+  );
+
   if (!currentPodcast) {
     return (
       <div className="flex flex-col items-center justify-center h-[600px] text-slate-500 bg-slate-900/50 rounded-2xl border border-slate-700/50 border-dashed">
@@ -102,6 +242,8 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
   }
 
   return (
+    <>
+    {showDanceParty && <DancePartyOverlay />}
     <div className="relative h-[600px] bg-slate-900 rounded-3xl overflow-hidden border border-slate-700 shadow-2xl flex flex-col md:flex-row animate-fade-in">
       {/* Background Blur Effect */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-30">
@@ -176,13 +318,30 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
               ${isPlaying ? 'animate-[spin_10s_linear_infinite]' : ''} 
             `}> 
               {/* Vinyl Texture */} 
-              <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.05)_0%,rgba(0,0,0,0.8)_100%)] z-10" /> 
-              <div className="absolute inset-0 flex items-center justify-center"> 
-                <div className="w-24 h-24 md:w-28 md:h-28 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shadow-inner relative overflow-hidden"> 
-                   <Disc className="w-14 h-14 md:w-16 md:h-16 text-white/20 absolute" /> 
-                   <div className="text-white font-bold text-xl md:text-2xl z-10 px-4 drop-shadow-md"> 
-                      {currentPodcast.title.charAt(0)} 
-                   </div> 
+              <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.05)_0%,rgba(0,0,0,0.8)_100%)] z-10 pointer-events-none" /> 
+              <div className="absolute inset-0 flex items-center justify-center z-20"> 
+                <div 
+                  className={`w-24 h-24 md:w-28 md:h-28 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shadow-inner relative overflow-hidden ${guestImageUrl ? 'cursor-pointer hover:ring-4 hover:ring-pink-400/50 transition-all hover:scale-105' : ''}`}
+                  onClick={guestImageUrl ? openDanceParty : undefined}
+                  title={guestImageUrl ? '点击开启舞蹈派对' : undefined}
+                > 
+                   {currentPodcast.guestName && currentPodcast.guestName !== 'Guest' ? (
+                     <img 
+                       src={`/image/${encodeURIComponent(currentPodcast.guestName)}.gif`} 
+                       alt={currentPodcast.guestName}
+                       className="w-full h-full object-cover"
+                       onError={(e) => {
+                         e.currentTarget.style.display = 'none';
+                       }}
+                     />
+                   ) : (
+                     <>
+                       <Disc className="w-14 h-14 md:w-16 md:h-16 text-white/20 absolute" /> 
+                       <div className="text-white font-bold text-xl md:text-2xl z-10 px-4 drop-shadow-md"> 
+                          {currentPodcast.title.charAt(0)} 
+                       </div> 
+                     </>
+                   )}
                 </div> 
               </div> 
               {/* Grooves */} 
@@ -264,6 +423,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = ({ history, initialId, onClose, 
         </div> 
       </div> 
     </div> 
+    </>
   ); 
 }; 
 

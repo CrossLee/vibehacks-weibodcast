@@ -395,7 +395,11 @@ const App: React.FC = () => {
                         <PodcastResult 
                             title={result.title} 
                             script={result.script} 
-                            audioUrl={result.audioUrl} 
+                            audioUrl={result.audioUrl}
+                            id={result.id}
+                            timeline={result.timeline}
+                            guestName={result.guestName}
+                            history={history}
                         />
                     )}
 

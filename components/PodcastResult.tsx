@@ -10,9 +10,10 @@ interface PodcastResultProps {
   timeline?: SpeakerSegment[];
   guestName?: string;
   id?: string;
+  history?: PodcastResultType[];
 }
 
-const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, timeline, guestName, id }) => {
+const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, timeline, guestName, id, history = [] }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentSpeaker, setCurrentSpeaker] = useState<'Host' | 'Guest' | null>(null);
   const [showPlayer, setShowPlayer] = useState(false);
@@ -125,6 +126,9 @@ const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, 
     guestName
   };
 
+  // 使用传入的 history，如果没有则只显示当前播客
+  const playerHistory = history.length > 0 ? history : [currentPodcast];
+
   const PlayerModal = () => (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div className="relative w-full max-w-6xl my-auto">
@@ -134,7 +138,7 @@ const PodcastResult: React.FC<PodcastResultProps> = ({ title, script, audioUrl, 
         >
           <X className="w-6 h-6" />
         </button>
-        <MusicPlayer history={[currentPodcast]} initialId={currentPodcast.id} autoPlay />
+        <MusicPlayer history={playerHistory} initialId={id || 'current'} autoPlay />
       </div>
     </div>
   );
