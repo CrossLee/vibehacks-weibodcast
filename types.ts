@@ -46,3 +46,12 @@ export enum VoiceOption {
   FEMALE = 'Kore',
   CLONED = 'Cloned' 
 }
+
+export interface InterruptNote {
+  id: string;
+  podcastId: string;
+  podcastTitle: string;
+  timestamp: number;
+  audioTime: number;
+  content: string;
+}

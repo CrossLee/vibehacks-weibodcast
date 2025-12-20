@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppStatus, LogEntry, PodcastResult as PodcastResultType, SpeakerSegment } from './types';
+import { AppStatus, LogEntry, PodcastResult as PodcastResultType, SpeakerSegment, InterruptNote } from './types';
 import LogViewer from './components/LogViewer';
 import InputSection from './components/InputSection';
 import PodcastResult from './components/PodcastResult';
@@ -30,6 +30,9 @@ const App: React.FC = () => {
   // History State
   const [history, setHistory] = useState<PodcastResultType[]>([]);
 
+  // Interrupt Notes State
+  const [interruptNotes, setInterruptNotes] = useState<InterruptNote[]>([]);
+
   // Pre-filled content from SpiderLab
   const [initialContent, setInitialContent] = useState<string | undefined>(undefined);
 
@@ -45,6 +48,16 @@ const App: React.FC = () => {
         console.error("Failed to load history", e);
       }
     }
+    
+    // Load interrupt notes
+    const savedNotes = localStorage.getItem('weibodcast_interrupt_notes');
+    if (savedNotes) {
+      try {
+        setInterruptNotes(JSON.parse(savedNotes));
+      } catch (e) {
+        console.error("Failed to load interrupt notes", e);
+      }
+    }
   }, []);
 
   // Save history metadata to localStorage whenever it changes
@@ -52,6 +65,29 @@ const App: React.FC = () => {
     const metadataOnly = history.map(({ audioUrl, ...rest }) => rest);
     localStorage.setItem('weibodcast_history', JSON.stringify(metadataOnly));
   }, [history]);
+
+  // Save interrupt notes to localStorage
+  useEffect(() => {
+    localStorage.setItem('weibodcast_interrupt_notes', JSON.stringify(interruptNotes));
+  }, [interruptNotes]);
+
+  // Handle saving interrupt note
+  const handleSaveInterruptNote = (note: InterruptNote) => {
+    console.log('App: handleSaveInterruptNote called with:', note);
+    setInterruptNotes((prev: InterruptNote[]) => {
+      const newNotes = [note, ...prev];
+      console.log('App: New notes array:', newNotes);
+      return newNotes;
+    });
+  };
+
+  // Debug: log when component renders
+  console.log('App render: handleSaveInterruptNote is:', typeof handleSaveInterruptNote);
+
+  // Handle deleting interrupt note
+  const handleDeleteInterruptNote = (noteId: string) => {
+    setInterruptNotes((prev: InterruptNote[]) => prev.filter((note: InterruptNote) => note.id !== noteId));
+  };
 
   const addLog = (message: string, type: LogEntry['type'] = 'info') => {
     const newLog: LogEntry = {
@@ -398,7 +434,10 @@ const App: React.FC = () => {
         ) : view === 'imagelab' ? (
             <ImageDance />
         ) : (
-            <MusicPlayer history={history} initialId={result?.id} />
+            <MusicPlayer 
+              history={history} 
+              initialId={result?.id} 
+            />
         )}
 
       </div>
